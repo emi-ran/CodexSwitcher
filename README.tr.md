@@ -15,6 +15,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform" />
+  <img src="https://img.shields.io/badge/S%C3%BCr%C3%BCm-v0.1.0-10b981" alt="Sürüm" />
   <img src="https://img.shields.io/badge/Runtime-Node.js%20%3E%3D18-339933?logo=node.js&logoColor=white" alt="Node" />
   <img src="https://img.shields.io/badge/Entegrasyon-9Router-7928CA" alt="9Router" />
   <img src="https://img.shields.io/badge/Aray%C3%BCz-Minimalist%20Dark-111111" alt="Tasarım" />

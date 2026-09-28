@@ -1,6 +1,6 @@
 {
   "name": "codexswitcher",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Windows account switcher and quota monitor for OpenAI Codex & ChatGPT Desktop",
   "main": "electron-main.js",
   "scripts": {

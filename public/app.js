@@ -98,8 +98,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     log(t('readyLog'));
   }
 
-  // Periodic poll every 4s
-  setInterval(pollProcessStatus, 4000);
+  // Smart polling: only runs when window is visible, completely paused in tray
+  startPolling();
+});
+
+let pollInterval = null;
+
+function startPolling() {
+  if (pollInterval || document.hidden) return;
+  pollInterval = setInterval(async () => {
+    if (document.hidden) {
+      stopPolling();
+      return;
+    }
+    await pollProcessStatus();
+  }, 4000);
+}
+
+function stopPolling() {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = null;
+  }
+}
+
+// Pause all network and CPU polling when minimized to tray
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopPolling();
+  } else {
+    pollProcessStatus();
+    startPolling();
+  }
+});
+
+window.addEventListener('focus', () => {
+  pollProcessStatus();
+  startPolling();
 });
 
 function setupEventListeners() {
@@ -201,6 +236,7 @@ async function loadStatus() {
 }
 
 async function pollProcessStatus() {
+  if (document.hidden) return;
   try {
     const res = await fetch('/api/status');
     const data = await res.json();

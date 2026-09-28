@@ -8,7 +8,8 @@
     "dev": "electron .",
     "server": "node server.js",
     "build": "node scripts/build-exe.js",
-    "build:exe": "node scripts/build-exe.js"
+    "build:exe": "node scripts/build-exe.js",
+    "release": "node scripts/release.js"
   },
   "keywords": [
     "codex",

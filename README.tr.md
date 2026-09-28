@@ -109,6 +109,16 @@
      npm run build
      ```
 
+5. **Yeni Sürüm Çıkarma (GitHub Actions CI/CD):**
+   Tag oluşturup pushladığınızda GitHub Actions otomatik olarak Windows üzerinde derler, sürüm notlarını oluşturur ve indirilebilir `.zip` olarak Release yayınlar:
+   ```bash
+   # Otomatik tag oluşturur
+   npm run release
+
+   # Tag'i GitHub'a gönderir (CI derlemesini tetikler)
+   git push origin v0.1.0
+   ```
+
 ---
 
 ## Proje Dizini

@@ -109,6 +109,16 @@
      npm run build
      ```
 
+5. **Publishing a New Release (GitHub Actions CI/CD):**
+   Pushing a tag automatically triggers GitHub Actions to build the Windows desktop app, generate release notes, and publish downloadable `.zip` assets to GitHub Releases:
+   ```bash
+   # Generates tag locally from package.json version
+   npm run release
+
+   # Push tag to GitHub (triggers automated release build)
+   git push origin v0.1.0
+   ```
+
 ---
 
 ## Project Structure

@@ -36,3 +36,6 @@ Desktop.ini
 # Runtime logs
 logs/
 *.log
+# Binary / Executables
+*.exe
+CodexSwitcher.exe

@@ -94,7 +94,7 @@
 
 3. **Yapılandırma:**
    > [!TIP]
-   > Herhangi bir `.env` dosyasıyla uğraşmanıza gerek yoktur! Uygulamayı açtıktan sonra sağ üstteki **Ayarlar (Settings)** penceresinden 9Router adresinizi ve şifrenizi bir defa girmeniz yeterlidir. Tüm ayarlarınız `~/.codex/switcher_config.json` dosyasında kalıcı olarak saklanır; böylece `.exe` güncellense de verileriniz silinmez.
+   > Herhangi bir `.env` dosyasıyla uğraşmanıza gerek yoktur! Uygulamayı açtıktan sonra sağ üstteki **Ayarlar (Settings)** penceresinden 9Router adresinizi ve şifrenizi bir defa girmeniz yeterlidir. Tüm ayarlarınız ve önbelleğiniz cihazınıza özel **AES-256-GCM** algoritmasıyla şifrelenerek `~/.codex/switcher_config.dat` ve `~/.codex/switcher_accounts.dat` dosyalarında güvenle saklanır. Düz metin (JSON) olarak okunamaz, yalnızca bu uygulama çözebilir.
 
 4. **Uygulamayı başlatın:**
    - **Masaüstü Uygulaması (.exe)** *(En Pratik)*:
@@ -141,7 +141,7 @@ CodexSwitcher/
 | `/api/status` | `GET` | Aktif hesap, kalan limitler, router durumu ve süreç bilgisini döner |
 | `/api/sync` | `POST` | 9Router'a bağlanır, hesapları çeker ve güncel limitlerle harmanlar |
 | `/api/switch` | `POST` | ChatGPT'yi kapatır, `auth.json` günceller ve uygulamayı yeniden açar |
-| `/api/config` | `POST` | Router adresi ve şifresini `~/.codex/switcher_config.json` içine kaydeder |
+| `/api/config` | `POST` | Router adresi ve şifresini şifrelenmiş olarak `~/.codex/switcher_config.dat` içine kaydeder |
 | `/api/codex/stop` | `POST` | Açık olan ChatGPT masaüstü süreçlerini kapatır |
 | `/api/codex/start` | `POST` | ChatGPT Windows masaüstü uygulamasını başlatır |
 

@@ -94,7 +94,7 @@
 
 3. **Configuration:**
    > [!TIP]
-   > No `.env` file is needed! Simply open the application and configure your 9Router URL and password from the **Settings** modal in the top right. All configuration is safely stored locally in `~/.codex/switcher_config.json` on your PC, ensuring data persists permanently across updates.
+   > No `.env` file is needed! Simply open the application and configure your 9Router URL and password from the **Settings** modal in the top right. All configuration and cached accounts are encrypted using machine-bound **AES-256-GCM** and safely stored in `~/.codex/switcher_config.dat` and `~/.codex/switcher_accounts.dat`. They are stored in an encrypted binary format that only this application on your PC can decrypt.
 
 4. **Launch the app:**
    - **Native Desktop App (.exe)** *(Fastest)*:
@@ -141,7 +141,7 @@ CodexSwitcher/
 | `/api/status` | `GET` | Returns active account, remaining quotas, router info & process state |
 | `/api/sync` | `POST` | Authenticates with 9Router, pulls database, enriches with limits |
 | `/api/switch` | `POST` | Safely closes ChatGPT, writes `auth.json`, reopens app |
-| `/api/config` | `POST` | Saves `routerUrl` and `password` to `~/.codex/switcher_config.json` |
+| `/api/config` | `POST` | Saves `routerUrl` and `password` encrypted to `~/.codex/switcher_config.dat` |
 | `/api/codex/stop` | `POST` | Gracefully closes running interactive ChatGPT instances |
 | `/api/codex/start` | `POST` | Launches the Windows Store ChatGPT Desktop App |
 

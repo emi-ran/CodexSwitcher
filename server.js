@@ -39,7 +39,7 @@ const {
 
 const app = express();
 
-// Load persistent configuration from ~/.codex/switcher_config.json
+// Load persistent configuration from ~/.codex/switcher_config.dat (AES-256-GCM encrypted)
 const initialConfig = loadConfig();
 const PORT = initialConfig.port || process.env.PORT || 3210;
 
@@ -52,7 +52,7 @@ const assetsDir = fs.existsSync(path.join(appDir, 'assets')) ? path.join(appDir,
 app.use(express.static(publicDir));
 app.use('/assets', express.static(assetsDir));
 
-// Cache in memory for currently fetched accounts from 9Router (persisted in ~/.codex/switcher_accounts_cache.json)
+// Cache in memory for currently fetched accounts from 9Router (persisted encrypted in ~/.codex/switcher_accounts.dat)
 let cachedAccounts = loadAccountsCache();
 let cachedRawDb = null;
 if (cachedAccounts.length > 0) {
@@ -187,7 +187,7 @@ app.post('/api/switch', async (req, res) => {
   }
 });
 
-// 4. Save Configuration (Persisted in ~/.codex/switcher_config.json)
+// 4. Save Configuration (Persisted encrypted in ~/.codex/switcher_config.dat)
 app.post('/api/config', (req, res) => {
   try {
     const { routerUrl, password } = req.body;

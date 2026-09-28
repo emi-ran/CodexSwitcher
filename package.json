@@ -1,0 +1,30 @@
+{
+  "name": "codexswitcher",
+  "version": "1.0.0",
+  "description": "Windows account switcher and quota monitor for OpenAI Codex & ChatGPT Desktop",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "server": "node server.js",
+    "build": "node scripts/build-exe.js",
+    "build:exe": "node scripts/build-exe.js"
+  },
+  "keywords": [
+    "codex",
+    "chatgpt",
+    "switcher",
+    "9router"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-packager": "^17.1.2"
+  }
+}

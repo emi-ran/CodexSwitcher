@@ -1,0 +1,38 @@
+# Secrets & Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies & Build
+node_modules/
+dist/
+*.pdb
+sea-prep.blob
+sea-config.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Backups & Auth dumps
+backups/
+*.bak
+*.bak.*
+.codex/
+.accounts_cache.json
+.*_cache.json
+
+# Operating System Files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor & IDE artifacts
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Runtime logs
+logs/
+*.log

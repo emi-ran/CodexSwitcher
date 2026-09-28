@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Codex Switcher</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="app-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"/>
+            <polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <div class="header-title-wrap">
+          <span class="app-title">Codex Switcher</span>
+          <span class="router-tag" id="routerStatusText">9Router</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- Codex / ChatGPT Process Status -->
+        <div class="status-indicator-pill" id="codexStatusPill">
+          <span class="indicator-dot" id="processDot"></span>
+          <span id="processText">ChatGPT</span>
+          <button class="pill-action-btn" id="toggleCodexProcessBtn" title="ChatGPT Durumu">
+            <svg id="processActionIcon" width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+          </button>
+        </div>
+
+        <button class="btn btn-default" id="syncBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span id="syncBtnText" data-i18n="syncBtn">Senkronize Et</span>
+        </button>
+
+        <button class="btn btn-icon" id="openSettingsBtn" title="Ayarlar" data-i18n-title="settingsBtn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+
+        <!-- TR / EN Language Switcher -->
+        <div class="lang-switch" id="langSwitch" role="group" aria-label="Language selection">
+          <button type="button" class="lang-btn active" data-lang="tr" id="langBtnTr">TR</button>
+          <button type="button" class="lang-btn" data-lang="en" id="langBtnEn">EN</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <!-- Active Account Section -->
+      <section class="section-active">
+        <div class="active-card" id="spotlightCard">
+          <div class="active-badge-row">
+            <div class="active-tag">
+              <span class="active-dot"></span>
+              <span id="activeTagText" data-i18n="currentActiveAccount">AKTİF HESAP</span>
+            </div>
+            <span class="plan-tag" id="spotlightPlanBadge">PLUS</span>
+          </div>
+
+          <div class="active-details">
+            <div class="active-main-info">
+              <div class="active-email" id="spotlightEmail">Yükleniyor...</div>
+              <div class="active-meta-row">
+                <span class="meta-item">
+                  <span class="meta-label" id="metaLabelAccountId" data-i18n="accountId">Hesap ID:</span>
+                  <code class="meta-val" id="spotlightAccountId">-</code>
+                </span>
+                <span class="meta-separator">•</span>
+                <span class="meta-item">
+                  <span class="meta-label" id="metaLabelConfig" data-i18n="config">Yapılandırma:</span>
+                  <span class="meta-val" id="spotlightLastRefresh">~/.codex/auth.json</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="active-actions">
+              <button class="btn btn-secondary btn-sm" id="restartCodexBtn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 4v6h6M23 20v-6h-6"/>
+                  <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                </svg>
+                <span id="restartCodexBtnText" data-i18n="restartChatGpt">ChatGPT'yi Yeniden Başlat</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 5h and Weekly Limits Bar for Active Account -->
+          <div class="active-limits-grid" id="activeLimitsGrid" style="display: none;">
+            <div class="limit-card">
+              <div class="limit-card-header">
+                <span class="limit-label" id="label5h" data-i18n="hour5Remaining">5-Saatlik Limit (Kalan)</span>
+                <span class="limit-percent" id="active5hPercent">%100</span>
+              </div>
+              <div class="limit-bar-track">
+                <div class="limit-bar-fill" id="active5hFill" style="width: 100%;"></div>
+              </div>
+              <div class="limit-meta" id="active5hReset">Sıfırlanma: -</div>
+            </div>
+
+            <div class="limit-card">
+              <div class="limit-card-header">
+                <span class="limit-label" id="labelWeekly" data-i18n="weeklyRemaining">Haftalık Limit (Kalan)</span>
+                <span class="limit-percent" id="activeWeeklyPercent">%100</span>
+              </div>
+              <div class="limit-bar-track">
+                <div class="limit-bar-fill" id="activeWeeklyFill" style="width: 100%;"></div>
+              </div>
+              <div class="limit-meta" id="activeWeeklyReset">Sıfırlanma: -</div>
+            </div>
+
+            <div class="limit-card credits-card" id="activeCreditsCard">
+              <div class="limit-card-header">
+                <span class="limit-label" id="labelCredits" data-i18n="resetCredits">Sıfırlama Hakkı</span>
+                <span class="credits-count" id="activeCreditsCount">0</span>
+              </div>
+              <div class="limit-meta" id="creditsSub" data-i18n="manualReset">Manuel Sıfırlama</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Accounts Table / List Section -->
+      <section class="section-accounts">
+        <div class="accounts-header">
+          <div class="accounts-title-area">
+            <h2 class="accounts-title" id="accountsTitleText" data-i18n="accountsTitle">Codex Hesapları</h2>
+            <span class="count-pill" id="accountsCount">0</span>
+          </div>
+          <div class="accounts-search-area">
+            <input type="text" id="searchInput" class="clean-input search-input" placeholder="Hesap ara (e-posta veya ID)..." data-i18n-placeholder="searchPlaceholder">
+          </div>
+        </div>
+
+        <div class="accounts-list" id="accountsGrid">
+          <!-- Dynamically populated rows -->
+        </div>
+
+        <!-- Empty State -->
+        <div class="empty-state" id="emptyState" style="display: none;">
+          <div class="empty-icon-wrap">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+          </div>
+          <h3 id="emptyTitle" data-i18n="emptyTitle">Hesap bulunamadı</h3>
+          <p id="emptyDesc" data-i18n="emptyDesc">9Router üzerinden Codex hesaplarını çekmek için senkronize et butonuna basın.</p>
+          <button class="btn btn-default" id="emptyActionBtn" data-i18n="emptyActionBtn">9Router'dan Senkronize Et</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Clean Footer -->
+    <footer class="app-footer">
+      <div class="footer-left">
+        <span class="status-dot-mini" id="statusDot"></span>
+        <span class="log-text" id="logMessage">Hazır.</span>
+      </div>
+      <div class="footer-right">
+        <span>Codex Switcher</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Switch Progress Modal -->
+  <div class="modal-backdrop" id="switchModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 class="modal-heading" id="switchModalHeading" data-i18n="switchingTitle">Hesap Değiştiriliyor</h3>
+        <p class="modal-sub" id="switchTargetLabel" data-i18n="applyingCreds">Kimlik bilgileri uygulanıyor...</p>
+      </div>
+
+      <div class="steps-box" id="switchStepsList">
+        <!-- Dynamically rendered steps -->
+      </div>
+
+      <div class="modal-foot" id="switchModalActions" style="display: none;">
+        <button class="btn btn-default" id="switchModalCloseBtn" data-i18n="closeBtn">Kapat</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 class="modal-heading" id="settingsModalHeading" data-i18n="settingsTitle">Ayarlar</h3>
+        <p class="modal-sub" id="settingsModalSub" data-i18n="settingsSub">9Router bağlantı ayarları (~/.codex içinde kalıcı saklanır)</p>
+      </div>
+
+      <form id="settingsForm" class="clean-form">
+        <div class="form-row">
+          <label for="settingsRouterUrl" class="field-label" id="labelRouterUrl" data-i18n="routerUrlLabel">9Router Adresi</label>
+          <input type="text" id="settingsRouterUrl" class="clean-input" placeholder="" required>
+        </div>
+
+        <div class="form-row">
+          <label for="settingsPassword" class="field-label" id="labelPassword" data-i18n="passwordLabel">Şifre</label>
+          <div class="input-with-button">
+            <input type="password" id="settingsPassword" class="clean-input" placeholder="9Router şifrenizi girin" data-i18n-placeholder="passwordPlaceholder" required>
+            <button type="button" class="btn-input-action" id="togglePasswordBtn">Göster</button>
+          </div>
+          <span class="field-help" id="passwordHelpText" data-i18n="passwordHelp">Şifreniz ~/.codex dizininde güvenle ve kalıcı olarak saklanır</span>
+        </div>
+
+        <div class="modal-foot modal-foot-form">
+          <button type="button" class="btn btn-secondary" id="closeSettingsModalBtn" data-i18n="cancelBtn">İptal</button>
+          <button type="submit" class="btn btn-primary" id="saveSettingsBtn" data-i18n="saveAndSyncBtn">Kaydet ve Senkronize Et</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-wrapper" id="toastContainer"></div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

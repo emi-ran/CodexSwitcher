@@ -46,6 +46,7 @@ const settingsModal = document.getElementById('settingsModal');
 const settingsForm = document.getElementById('settingsForm');
 const settingsRouterUrl = document.getElementById('settingsRouterUrl');
 const settingsPassword = document.getElementById('settingsPassword');
+const settingsAutoStart = document.getElementById('settingsAutoStart');
 const togglePasswordBtn = document.getElementById('togglePasswordBtn');
 const closeSettingsModalBtn = document.getElementById('closeSettingsModalBtn');
 
@@ -366,6 +367,15 @@ async function handleStartCodex() {
 function openSettingsModal() {
   settingsRouterUrl.value = appState.routerConfig.url || '';
   settingsPassword.value = '';
+
+  // Fetch current autostart setting
+  fetch('/api/autostart')
+    .then(r => r.json())
+    .then(d => {
+      if (settingsAutoStart) settingsAutoStart.checked = !!d.enabled;
+    })
+    .catch(() => {});
+
   settingsModal.classList.add('open');
 }
 
@@ -380,6 +390,18 @@ async function saveSettings() {
       body: JSON.stringify({ routerUrl: url, password })
     });
     const data = await res.json();
+
+    // Save autostart setting
+    if (settingsAutoStart) {
+      try {
+        await fetch('/api/autostart', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled: settingsAutoStart.checked })
+        });
+      } catch (e) {}
+    }
+
     if (data.success) {
       showToast(t('settingsSavedToast'), 'success');
       settingsModal.classList.remove('open');
@@ -464,8 +486,7 @@ function updateCodexProcessUI() {
   const isRunning = appState.codexStatus && appState.codexStatus.running;
   if (isRunning) {
     processDot.className = 'indicator-dot running';
-    const count = appState.codexStatus.processes.length;
-    processText.textContent = t('runningBadge', count);
+    processText.textContent = t('runningBadge');
     toggleCodexProcessBtn.title = t('stopChatGpt');
     processActionIcon.innerHTML = '<rect x="6" y="6" width="12" height="12"/>';
   } else {

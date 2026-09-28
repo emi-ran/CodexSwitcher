@@ -13,7 +13,7 @@ console.log('=======================================================');
 try {
   // Step 1: Package Electron desktop app
   console.log('\n[1/2] Packaging Electron native desktop application...');
-  execSync('npx electron-packager . CodexSwitcher --platform=win32 --arch=x64 --out=dist --overwrite --prune=true', {
+  execSync('npx electron-packager . CodexSwitcher --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --icon=assets/icon.ico', {
     cwd: rootDir,
     stdio: 'inherit'
   });

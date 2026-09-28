@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/assets/icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,10 +16,7 @@
     <header class="app-header">
       <div class="header-left">
         <div class="app-logo">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6"/>
-            <polyline points="8 6 2 12 8 18"/>
-          </svg>
+          <img src="/assets/icon.png" alt="Codex Switcher" style="width: 24px; height: 24px; border-radius: 5px; object-fit: contain;">
         </div>
         <div class="header-title-wrap">
           <span class="app-title">Codex Switcher</span>
@@ -218,6 +216,14 @@
             <button type="button" class="btn-input-action" id="togglePasswordBtn">Göster</button>
           </div>
           <span class="field-help" id="passwordHelpText" data-i18n="passwordHelp">Şifreniz ~/.codex dizininde güvenle ve kalıcı olarak saklanır</span>
+        </div>
+
+        <div class="form-row form-row-checkbox">
+          <label class="checkbox-container" id="labelAutoStart">
+            <input type="checkbox" id="settingsAutoStart">
+            <span class="checkbox-text" data-i18n="autoStartLabel">Windows ile birlikte başlat</span>
+          </label>
+          <span class="field-help" id="autoStartHelpText" data-i18n="autoStartHelp">Bilgisayar açıldığında sistem tepsisinde (tray) otomatik başlar</span>
         </div>
 
         <div class="modal-foot modal-foot-form">

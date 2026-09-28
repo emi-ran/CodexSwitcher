@@ -25,14 +25,16 @@
 
 ## Öne Çıkan Özellikler
 
+- **Özel Masaüstü Penceresi & Sistem Tepsisi (Tray)**: Terminal veya tarayıcı sekmeleri olmadan kendi penceresinde açılır. Kapatıldığında arka planda sistem tepsisine (Tray) küçülür ve çalışmaya devam eder.
+- **Tekil Örnek Kilidi (Mutex)**: Uygulama birden fazla kez açılamaz; tekrar açıldığında mevcut pencere ön plana gelir.
+- **Akıllı Boş Port Tespiti**: Varsayılan port (3210) doluysa çakışma yaşamaz, otomatik olarak bir sonraki boş porta bağlanır.
+- **Windows ile Birlikte Başlat**: Ayarlar penceresinden veya sistem tepsisi menüsünden tek tıkla Windows başlangıcına eklenebilir.
 - **Tek Tıkla Sorunsuz Hesap Değiştirme**: `~/.codex/auth.json` kimlik bilgilerini saniyeler içinde değiştirir.
-- **Otomatik Süreç Yönetimi**: Hesap değişirken açık `ChatGPT.exe` ve `codex.exe` süreçlerini nazikçe sonlandırır, `auth.json` güncellendikten sonra resmi Windows Store ChatGPT Masaüstü Uygulamasını (`OpenAI.Codex_2p2nqsd0c76g0!App`) otomatik olarak başlatır (arka plan sistem servislerine dokunmaz).
+- **Otomatik Süreç Yönetimi**: Hesap değişirken açık `ChatGPT.exe` ve `codex.exe` süreçlerini nazikçe sonlandırır, `auth.json` güncellendikten sonra resmi Windows Store ChatGPT Masaüstü Uygulamasını (`OpenAI.Codex_2p2nqsd0c76g0!App`) otomatik olarak başlatır.
 - **Canlı Kalan Kota Takibi**: OpenAI WHAM kullanım API'si ile doğrudan entegre olarak **5 Saatlik Oturum** ve **Haftalık Limit** için **kalan** yüzdeyi, sıfırlanma geri sayımını ve reset haklarını gösterir.
 - **9Router Veritabanı Senkronizasyonu**: 9Router sunucunuza giriş yaparak veritabanını çeker, diğer sağlayıcıları ayıklayarak yalnızca gerçek Codex hesaplarını listeler.
-- **Otomatik Güvenli Yedekleme**: Her hesap değişiminden önce `~/.codex/backups/auth.json.bak.<tarih>` konumuna otomatik zaman damgalı yedek alır.
-- **Kendini Yenileyen Token Desteği**: Süresi dolmuş oturumları tespit eder ve OpenAI OAuth uç noktası üzerinden arka planda otomatik olarak yeniler.
-- **Çift Dil Desteği (TR / EN)**: Üst menüden tek tıkla Türkçe veya İngilizce arayüze geçiş; dile duyarlı yüzde (`%77` / `77%`) ve zaman formatı.
-- **Sade ve Modern Tasarım**: Linear / Vercel tarzı, göz yormayan, gereksiz parlamalardan arındırılmış koyu tema.
+- **Kalıcı Yerel Depolama**: Ayarlarınız ve önbellek `.env` dosyasına ihtiyaç duymadan doğrudan `~/.codex/` altında saklanır; güncellemelerde asla kaybolmaz.
+- **Çift Dil Desteği (TR / EN)**: Üst menüden tek tıkla Türkçe veya İngilizce arayüze geçiş.
 
 ---
 
@@ -90,11 +92,9 @@
    npm install
    ```
 
-3. **Yapılandırma (İsteğe Bağlı):**
+3. **Yapılandırma:**
    > [!TIP]
-   > `.env` dosyasıyla uğraşmanıza gerek yoktur! Uygulamayı açtıktan sonra sağ üstteki **Ayarlar (Settings)** butonundan 9Router adresinizi ve şifrenizi bir defa girmeniz yeterlidir. Tüm ayarlarınız ve önbelleğiniz `~/.codex` dizininde kalıcı olarak saklanır; böylece `.exe` güncellense de, kapatılıp açılsa da veya `npm run dev` yapılsa da bilgileriniz kaybolmaz.
-   
-   Dilerseniz geleneksel olarak `.env` dosyasını da kullanabilirsiniz (`.env.example` dosyasını `.env` olarak kopyalayarak).
+   > Herhangi bir `.env` dosyasıyla uğraşmanıza gerek yoktur! Uygulamayı açtıktan sonra sağ üstteki **Ayarlar (Settings)** penceresinden 9Router adresinizi ve şifrenizi bir defa girmeniz yeterlidir. Tüm ayarlarınız `~/.codex/switcher_config.json` dosyasında kalıcı olarak saklanır; böylece `.exe` güncellense de verileriniz silinmez.
 
 4. **Uygulamayı başlatın:**
    - **Masaüstü Uygulaması (.exe)** *(En Pratik)*:
@@ -121,10 +121,10 @@ CodexSwitcher/
 │   ├── routerClient.js        # 9Router giriş ve veritabanı ayrıştırıcı
 │   └── usageClient.js         # OpenAI WHAM kota sorgulama ve token yenileyici
 ├── public/
-│   ├── app.js                 # Ön yüz mantığı, durum yönetimi ve TR/EN i18n
-│   ├── index.html             # Semantik HTML şablonu
+│   ├── app.js                 # Ön yüz mantığı ve durum yönetimi
+│   ├── i18n.js                # TR / EN dil sözlükleri
+│   ├── index.html             # Semantik HTML arayüzü
 │   └── style.css              # Minimal koyu tema stilleri
-├── .env.example               # Örnek ortam değişkenleri
 ├── .gitignore                 # Git dışlama kuralları
 ├── package.json               # Paket bağımlılıkları ve betikler
 ├── README.md                  # İngilizce Dökümantasyon (Varsayılan)

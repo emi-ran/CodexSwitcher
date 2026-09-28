@@ -6,14 +6,6 @@ const isElectron = !!process.versions.electron;
 const isExecutable = process.execPath.toLowerCase().endsWith('codexswitcher.exe');
 const appDir = isExecutable && !isElectron ? path.dirname(process.execPath) : __dirname;
 
-// Try loading .env if present (backward compatibility)
-try {
-  const envPath = path.join(appDir, '.env');
-  if (fs.existsSync(envPath)) {
-    require('dotenv').config({ path: envPath });
-  }
-} catch (e) {}
-
 const express = require('express');
 
 const {
@@ -253,23 +245,82 @@ app.get('/api/debug/db-sample', (req, res) => {
   });
 });
 
-// Start listening
-app.listen(PORT, () => {
-  const url = `http://localhost:${PORT}`;
-  const config = loadConfig();
-  console.log(`=======================================================`);
-  console.log(` Codex Switcher Server running on ${url}`);
-  console.log(` Router URL: ${config.routerUrl}`);
-  console.log(` Password configured: ${config.hasPassword ? 'Yes' : 'No'}`);
-  console.log(` Persistent Config: ${getConfigPath()}`);
-  console.log(`=======================================================`);
-
-  // Automatically open default browser when launched as standalone CLI executable or with --open flag (not in Electron)
-  if (!isElectron && (isExecutable || process.argv.includes('--open'))) {
-    console.log(`[App] Opening ${url} in default browser...`);
-    const { exec } = require('child_process');
-    exec(`start ${url}`);
-  }
+// 7. Auto-start with Windows (Electron Bridge)
+app.get('/api/autostart', (req, res) => {
+  const isEnabled = typeof global.getAutoStart === 'function' ? global.getAutoStart() : false;
+  res.json({ success: true, enabled: isEnabled });
 });
 
-module.exports = app;
+app.post('/api/autostart', (req, res) => {
+  const { enabled } = req.body;
+  if (typeof global.setAutoStart === 'function') {
+    global.setAutoStart(!!enabled);
+    return res.json({ success: true, enabled: !!enabled });
+  }
+  res.json({ success: false, error: 'Auto-start only available in desktop app' });
+});
+
+const net = require('net');
+
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const tester = net.createServer();
+    tester.once('error', (err) => {
+      resolve(false);
+    });
+    tester.once('listening', () => {
+      tester.close(() => resolve(true));
+    });
+    tester.listen(port);
+  });
+}
+
+async function findAvailablePort(startPort = 3210, maxAttempts = 50) {
+  for (let p = startPort; p < startPort + maxAttempts; p++) {
+    if (await isPortAvailable(p)) {
+      return p;
+    }
+  }
+  return startPort;
+}
+
+function startServer(preferredPort) {
+  return new Promise(async (resolve, reject) => {
+    const config = loadConfig();
+    const desiredPort = preferredPort || config.port || parseInt(process.env.PORT, 10) || 3210;
+    const actualPort = await findAvailablePort(desiredPort);
+
+    const server = app.listen(actualPort, () => {
+      const url = `http://localhost:${actualPort}`;
+      console.log(`=======================================================`);
+      console.log(` Codex Switcher Server running on ${url}`);
+      console.log(` Router URL: ${config.routerUrl}`);
+      console.log(` Password configured: ${config.hasPassword ? 'Yes' : 'No'}`);
+      console.log(` Persistent Config: ${getConfigPath()}`);
+      if (actualPort !== desiredPort) {
+        console.log(` [Port] Port ${desiredPort} was busy, bound to free port ${actualPort}`);
+      }
+      console.log(`=======================================================`);
+
+      if (!isElectron && (isExecutable || process.argv.includes('--open'))) {
+        console.log(`[App] Opening ${url} in default browser...`);
+        const { exec } = require('child_process');
+        exec(`start ${url}`);
+      }
+
+      resolve({ port: actualPort, server });
+    });
+
+    server.on('error', reject);
+  });
+}
+
+// Auto-start if executed directly (e.g. `node server.js`)
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = {
+  app,
+  startServer
+};

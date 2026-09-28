@@ -25,14 +25,16 @@
 
 ## Highlights
 
+- **Dedicated Desktop App & System Tray**: Opens in its own clean desktop window with no console window and no browser tabs. Closing minimizes directly to the Windows System Tray with a balloon notification.
+- **Single Instance Lock (Mutex)**: Prevents duplicate instances; launching again seamlessly restores and focuses the active window.
+- **Smart Dynamic Port Allocation**: If port 3210 is occupied, it automatically discovers and binds to the next available free port without port collision errors.
+- **Start with Windows Toggle**: One-click autostart configuration available right inside the UI Settings modal and the System Tray context menu.
 - **Seamless 1-Click Switching**: Instantly switch between accounts in `~/.codex/auth.json` with zero hassle.
-- **Automated Process Lifecycle**: Gracefully closes running `ChatGPT.exe` / `codex.exe` instances and automatically restarts the official Windows ChatGPT Desktop App (`OpenAI.Codex_2p2nqsd0c76g0!App`), without disturbing Windows background sandbox services.
+- **Automated Process Lifecycle**: Gracefully closes running `ChatGPT.exe` / `codex.exe` instances and automatically restarts the official Windows ChatGPT Desktop App (`OpenAI.Codex_2p2nqsd0c76g0!App`).
 - **Real-Time Remaining Quotas**: Direct integration with OpenAI WHAM backend usage API displaying remaining percentage for **5-Hour Session** and **Weekly Limit**, alongside remaining reset credits and countdown timers.
 - **9Router Database Sync**: Authenticates against your 9Router gateway, extracts actual Codex provider accounts, and filters out non-Codex connections.
-- **Atomic Credential Backups**: Automatic timestamped backups stored in `~/.codex/backups/auth.json.bak.<timestamp>` before any credential write.
-- **Token Self-Healing**: Automatically detects expired OAuth tokens and triggers instant background token refreshes via OpenAI OAuth endpoints.
-- **Bilingual Interface (TR / EN)**: Full instantaneous language switching with localized percentage signs (`%77` vs `77%`) and countdown notation.
-- **Minimalist Aesthetic**: Utilitarian, Linear/Vercel-inspired dark theme with zero neon glare or AI slop.
+- **Persistent Local Configuration**: All settings and cached accounts are stored safely in `~/.codex/` without requiring `.env` files.
+- **Bilingual Interface (TR / EN)**: Full instantaneous language switching with localized formatting.
 
 ---
 
@@ -90,11 +92,9 @@
    npm install
    ```
 
-3. **Configuration (Optional):**
+3. **Configuration:**
    > [!TIP]
-   > No `.env` file is required! Simply open the application and configure your 9Router URL and password from the **Settings** modal in the top right. All configuration and cached accounts are stored permanently in `~/.codex/` on your PC, ensuring data persists across `.exe` updates, process restarts, or `npm run dev`.
-   
-   If preferred, traditional `.env` files are still supported as an optional fallback.
+   > No `.env` file is needed! Simply open the application and configure your 9Router URL and password from the **Settings** modal in the top right. All configuration is safely stored locally in `~/.codex/switcher_config.json` on your PC, ensuring data persists permanently across updates.
 
 4. **Launch the app:**
    - **Native Desktop App (.exe)** *(Fastest)*:
@@ -121,10 +121,10 @@ CodexSwitcher/
 │   ├── routerClient.js        # 9Router login & database account extractor
 │   └── usageClient.js         # OpenAI WHAM usage API client & token refresher
 ├── public/
-│   ├── app.js                 # Frontend controller, state & TR/EN i18n
+│   ├── app.js                 # Frontend controller and state management
+│   ├── i18n.js                # TR / EN dictionaries & localized formatting
 │   ├── index.html             # Clean semantic HTML markup
 │   └── style.css              # Minimal dark design system
-├── .env.example               # Environment variables template
 ├── .gitignore                 # Standard git exclusions
 ├── package.json               # Node.js project manifest & scripts
 ├── README.md                  # English Documentation (Default)

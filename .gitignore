@@ -6,6 +6,7 @@
 # Dependencies & Build
 node_modules/
 dist/
+dist-release/
 *.pdb
 sea-prep.blob
 sea-config.json

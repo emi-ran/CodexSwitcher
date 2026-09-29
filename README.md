@@ -110,7 +110,8 @@
      ```
 
 5. **Publishing a New Release (GitHub Actions CI/CD):**
-   Pushing a tag automatically triggers GitHub Actions to build the Windows desktop app, generate release notes, and publish downloadable `.zip` assets to GitHub Releases:
+   Pushing a tag triggers GitHub Actions to build three separate Windows x64 assets: a single-file portable `.exe`, a setup `.exe`, and a setup `.msi`. The workflow publishes them with release notes. The portable build needs no installation; app settings still live in the user's `~/.codex/` directory.
+   To build the same assets locally on Windows, run `npm run build:release`. The existing `npm run build` command still creates the development folder package and its dependent launcher.
    ```bash
    # Generates tag locally from package.json version
    npm run release

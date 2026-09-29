@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name (e.g. v0.1.0)'
+        description: 'Optional tag name; must match package.json (e.g. v0.1.0)'
         required: false
-        default: 'v0.1.0'
 
 permissions:
   contents: write
@@ -31,34 +30,35 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and package desktop application
-        run: npm run build
+      - name: Build portable, EXE installer, and MSI installer
+        run: npm run build:release
 
       - name: Determine version tag
         id: version
-        shell: bash
+        shell: pwsh
+        env:
+          REQUESTED_TAG: ${{ inputs.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag_name }}" ]; then
-            TAG="${{ github.event.inputs.tag_name }}"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          $expected = "v$(node -p "require('./package.json').version")"
+          $tag = if ($env:GITHUB_EVENT_NAME -eq 'push') { $env:GITHUB_REF_NAME } elseif ($env:REQUESTED_TAG) { $env:REQUESTED_TAG } else { $expected }
+          if ($tag -ne $expected) { throw "Release tag $tag does not match package version $expected" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
 
-      - name: Create Release Zip Archive
+      - name: Verify release assets
         shell: pwsh
         run: |
-          $tag = "${{ steps.version.outputs.tag }}"
-          $zipName = "CodexSwitcher-$tag-windows-x64.zip"
-          Compress-Archive -Path "dist\CodexSwitcher-win32-x64\*" -DestinationPath $zipName -Force
-          Write-Output "Created: $zipName"
-          Get-Item $zipName
+          $version = node -p "require('./package.json').version"
+          @(
+            "dist-release/CodexSwitcher-$version-portable-x64.exe",
+            "dist-release/CodexSwitcher-$version-setup-x64.exe",
+            "dist-release/CodexSwitcher-$version-setup-x64.msi"
+          ) | ForEach-Object {
+            if (-not (Test-Path -LiteralPath $_ -PathType Leaf)) { throw "Missing release asset: $_" }
+            Get-Item -LiteralPath $_ | Select-Object Name, Length
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -66,7 +66,10 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Codex Switcher ${{ steps.version.outputs.tag }}
           files: |
-            CodexSwitcher-*-windows-x64.zip
+            dist-release/CodexSwitcher-*-portable-x64.exe
+            dist-release/CodexSwitcher-*-setup-x64.exe
+            dist-release/CodexSwitcher-*-setup-x64.msi
+          fail_on_unmatched_files: true
           generate_release_notes: true
           draft: false
           prerelease: false

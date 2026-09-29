@@ -110,7 +110,8 @@
      ```
 
 5. **Yeni Sürüm Çıkarma (GitHub Actions CI/CD):**
-   Tag oluşturup pushladığınızda GitHub Actions otomatik olarak Windows üzerinde derler, sürüm notlarını oluşturur ve indirilebilir `.zip` olarak Release yayınlar:
+   Tag oluşturup pushladığınızda GitHub Actions Windows x64 için üç ayrı dosya üretir: tek dosyalık portable `.exe`, kurulum `.exe` ve kurulum `.msi`. Sürüm notlarıyla birlikte GitHub Release'e ekler. Portable sürüm kurulum gerektirmez; uygulama ayarları yine kullanıcı profilindeki `~/.codex/` klasöründe tutulur.
+   Yerelde aynı paketleri üretmek için Windows üzerinde `npm run build:release` kullanın. Mevcut `npm run build` komutu geliştirme amaçlı klasör paketi ve ona bağlı başlatıcıyı üretmeye devam eder.
    ```bash
    # Otomatik tag oluşturur
    npm run release

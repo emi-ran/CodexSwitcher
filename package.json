@@ -9,7 +9,35 @@
     "server": "node server.js",
     "build": "node scripts/build-exe.js",
     "build:exe": "node scripts/build-exe.js",
+    "build:release": "electron-builder --win --x64 --publish never",
     "release": "node scripts/release.js"
+  },
+  "build": {
+    "appId": "app.codexswitcher.desktop",
+    "productName": "CodexSwitcher",
+    "directories": {
+      "output": "dist-release"
+    },
+    "files": [
+      "electron-main.js",
+      "server.js",
+      "lib/**/*",
+      "public/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": ["portable", "nsis", "msi"]
+    },
+    "portable": {
+      "artifactName": "CodexSwitcher-${version}-portable-${arch}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "CodexSwitcher-${version}-setup-${arch}.${ext}"
+    },
+    "msi": {
+      "artifactName": "CodexSwitcher-${version}-setup-${arch}.${ext}"
+    }
   },
   "keywords": [
     "codex",
@@ -25,6 +53,7 @@
   },
   "devDependencies": {
     "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "electron-packager": "^17.1.2"
   }
 }

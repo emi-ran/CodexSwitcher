@@ -76,7 +76,8 @@ app.get('/api/status', async (req, res) => {
       success: true,
       routerConfig: {
         url: config.routerUrl,
-        hasPassword: config.hasPassword
+        hasPassword: config.hasPassword,
+        launchDesktopAfterSwitch: config.launchDesktopAfterSwitch
       },
       activeAccount,
       codexStatus,
@@ -92,8 +93,16 @@ app.get('/api/status', async (req, res) => {
 app.post('/api/sync', async (req, res) => {
   try {
     const config = loadConfig();
-    const routerUrl = req.body.routerUrl || config.routerUrl || '';
+    const routerUrl = req.body.routerUrl || config.routerUrl;
     const password = req.body.password || config.password;
+
+    if (!routerUrl) {
+      return res.status(400).json({
+        success: false,
+        requiresConfiguration: true,
+        error: '9Router URL is required. Please set it in Settings.'
+      });
+    }
 
     if (!password) {
       return res.status(400).json({
@@ -164,7 +173,7 @@ app.post('/api/switch', async (req, res) => {
     // 1. Detect and stop Codex if running
     // 2. Backup & write ~/.codex/auth.json
     // 3. Restart Codex
-    const switchResult = await performSwitch(targetAccount);
+    const switchResult = await performSwitch(targetAccount, loadConfig().launchDesktopAfterSwitch);
 
     // Refresh cached accounts active status
     const activeNow = switchResult.activeAccount;
@@ -190,14 +199,15 @@ app.post('/api/switch', async (req, res) => {
 // 4. Save Configuration (Persisted encrypted in ~/.codex/switcher_config.dat)
 app.post('/api/config', (req, res) => {
   try {
-    const { routerUrl, password } = req.body;
+    const { routerUrl, password, launchDesktopAfterSwitch } = req.body;
     if (!routerUrl) {
       return res.status(400).json({ success: false, error: 'Router URL is required' });
     }
 
     const saved = saveConfig({
       routerUrl: cleanUrl(routerUrl),
-      password: password !== undefined ? password : ''
+      password: password !== undefined ? password : '',
+      launchDesktopAfterSwitch
     });
 
     res.json({
@@ -205,7 +215,8 @@ app.post('/api/config', (req, res) => {
       message: 'Configuration saved locally',
       routerConfig: {
         url: saved.routerUrl,
-        hasPassword: !!saved.password && saved.password.trim().length > 0
+        hasPassword: !!saved.password && saved.password.trim().length > 0,
+        launchDesktopAfterSwitch: saved.launchDesktopAfterSwitch
       }
     });
   } catch (err) {

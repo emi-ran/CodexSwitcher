@@ -1,173 +1,53 @@
 # Codex Switcher
 
-<p align="center">
-  <img src="./assets/screenshot.png" alt="Codex Switcher UI" width="850" />
-</p>
+[Türkçe](README.tr.md)
 
-<p align="center">
-  <b>A lightweight, ultra-clean Windows account switcher & quota monitor for OpenAI Codex and ChatGPT Desktop.</b>
-</p>
+Codex Switcher syncs Codex accounts from 9Router, shows usage limits, and switches the active `~/.codex/auth.json` account. The new desktop app uses Tauri v2 with a Rust backend and the existing HTML/CSS/JavaScript interface. It targets Windows, Linux, and macOS.
 
-<p align="center">
-  <a href="README.md"><b>English</b></a> •
-  <a href="README.tr.md"><b>Türkçe</b></a>
-</p>
+## Development
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform" />
-  <img src="https://img.shields.io/badge/Version-v0.1.0-10b981" alt="Version" />
-  <img src="https://img.shields.io/badge/Runtime-Node.js%20%3E%3D18-339933?logo=node.js&logoColor=white" alt="Node" />
-  <img src="https://img.shields.io/badge/Integration-9Router-7928CA" alt="9Router" />
-  <img src="https://img.shields.io/badge/UI-Minimalist%20Dark-111111" alt="Design" />
-  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License" />
-</p>
+Install [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform, Node.js 20+, and Rust. On Linux, Tauri needs WebKitGTK 4.1 and appindicator development packages.
 
----
-
-## Highlights
-
-- **Dedicated Desktop App & System Tray**: Opens in its own clean desktop window with no console window and no browser tabs. Closing minimizes directly to the Windows System Tray with a balloon notification.
-- **Single Instance Lock (Mutex)**: Prevents duplicate instances; launching again seamlessly restores and focuses the active window.
-- **Smart Dynamic Port Allocation**: If port 3210 is occupied, it automatically discovers and binds to the next available free port without port collision errors.
-- **Start with Windows Toggle**: One-click autostart configuration available right inside the UI Settings modal and the System Tray context menu.
-- **Seamless 1-Click Switching**: Instantly switch between accounts in `~/.codex/auth.json` with zero hassle.
-- **Automated Process Lifecycle**: Gracefully closes running `ChatGPT.exe` / `codex.exe` instances and automatically restarts the official Windows ChatGPT Desktop App (`OpenAI.Codex_2p2nqsd0c76g0!App`).
-- **Real-Time Remaining Quotas**: Direct integration with OpenAI WHAM backend usage API displaying remaining percentage for **5-Hour Session** and **Weekly Limit**, alongside remaining reset credits and countdown timers.
-- **9Router Database Sync**: Authenticates against your 9Router gateway, extracts actual Codex provider accounts, and filters out non-Codex connections.
-- **Persistent Local Configuration**: All settings and cached accounts are stored safely in `~/.codex/` without requiring `.env` files.
-- **Bilingual Interface (TR / EN)**: Full instantaneous language switching with localized formatting.
-
----
-
-## Architecture & How It Works
-
-```
-┌─────────────────────────────────┐
-│     9Router Database Sync       │ (Fetches & filters codex provider tokens)
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│      OpenAI WHAM Usage API      │ (Fetches 5h and weekly remaining limits)
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│   Safe Process & File Swapper   │
-│  1. Terminate ChatGPT.exe       │
-│  2. Backup & write auth.json    │
-│  3. Launch ChatGPT Desktop App  │
-└─────────────────────────────────┘
+```bash
+npm ci
+npm run tauri -- dev
 ```
 
-1. **Credentials Management**:
-   The application interacts with `~/.codex/auth.json`. When switching accounts, it creates an atomic backup in `~/.codex/backups/`, parses the JWT payload to extract user claims (`chatgpt_plan_type`, `chatgpt_account_id`), and writes new session tokens.
+The older Electron app remains available with `npm start` during migration. The Tauri build uses Rust IPC and does not package Node.js or Express.
 
-2. **Windows Desktop Integration**:
-   The desktop application is registered under the Windows Store AppX ID `OpenAI.Codex_2p2nqsd0c76g0!App` with process image `ChatGPT.exe`. Switcher handles clean process termination and reopens the desktop client cleanly via `explorer.exe shell:AppsFolder\...`.
+## Build and release
 
-3. **Rate Limits & Quota**:
-   Queries `https://chatgpt.com/backend-api/wham/usage` using browser-like client headers and authorization bearers, converting raw usage counts into real-time remaining percentage bars.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- **Windows 10 / 11**
-- **Node.js** (v18.0 or newer recommended)
-- **OpenAI ChatGPT Desktop App** (Windows Store)
-- A **9Router** instance URL and password
-
-### Installation
-
-1. **Clone or download the repository:**
-   ```bash
-   git clone https://github.com/your-username/CodexSwitcher.git
-   cd CodexSwitcher
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Configuration:**
-   > [!TIP]
-   > No `.env` file is needed! Simply open the application and configure your 9Router URL and password from the **Settings** modal in the top right. All configuration and cached accounts are encrypted using machine-bound **AES-256-GCM** and safely stored in `~/.codex/switcher_config.dat` and `~/.codex/switcher_accounts.dat`. They are stored in an encrypted binary format that only this application on your PC can decrypt.
-
-4. **Launch the app:**
-   - **Native Desktop App (.exe)** *(Fastest)*:
-     Double-click `CodexSwitcher.exe` on Windows! It opens immediately in its own native desktop application window with no console/terminal popup and no browser tabs.
-   - **From Terminal / Development mode**:
-     ```bash
-     npm start   # or npm run dev (opens desktop window)
-     ```
-   - **Package Desktop .exe**:
-     ```bash
-     npm run build
-     ```
-
-5. **Publishing a New Release (GitHub Actions CI/CD):**
-   Pushing a tag triggers GitHub Actions to build three separate Windows x64 assets: a single-file portable `.exe`, a setup `.exe`, and a setup `.msi`. The workflow publishes them with release notes. The portable build needs no installation; app settings still live in the user's `~/.codex/` directory.
-   To build the same assets locally on Windows, run `npm run build:release`. The existing `npm run build` command still creates the development folder package and its dependent launcher.
-   ```bash
-   # Generates tag locally from package.json version
-   npm run release
-
-   # Push tag to GitHub (triggers automated release build)
-   git push origin v0.1.0
-   ```
-
----
-
-## Project Structure
-
-```
-CodexSwitcher/
-├── assets/
-│   └── screenshot.png         # UI dashboard preview
-├── lib/
-│   ├── codexManager.js        # Auth.json parser, backup, process killer & launcher
-│   ├── routerClient.js        # 9Router login & database account extractor
-│   └── usageClient.js         # OpenAI WHAM usage API client & token refresher
-├── public/
-│   ├── app.js                 # Frontend controller and state management
-│   ├── i18n.js                # TR / EN dictionaries & localized formatting
-│   ├── index.html             # Clean semantic HTML markup
-│   └── style.css              # Minimal dark design system
-├── .gitignore                 # Standard git exclusions
-├── package.json               # Node.js project manifest & scripts
-├── README.md                  # English Documentation (Default)
-├── README.tr.md               # Turkish Documentation
-└── server.js                  # Express backend & API endpoints
+```bash
+npm run tauri -- build
 ```
 
----
+The [release workflow](.github/workflows/release.yml) builds Windows x64, Linux x64, macOS Apple Silicon, and macOS Intel on their native runners. A manual workflow run builds downloadable CI artifacts. A matching `v<package.json version>` tag also publishes a GitHub Release. The expected files are:
 
-## REST API Reference
+| Platform | Packages |
+| --- | --- |
+| Windows x64 | portable executable, NSIS setup `.exe`, MSI installer |
+| Linux x64 | `.deb`, `.AppImage` |
+| macOS ARM64 / x64 | `.dmg` per architecture |
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/status` | `GET` | Returns active account, remaining quotas, router info & process state |
-| `/api/sync` | `POST` | Authenticates with 9Router, pulls database, enriches with limits |
-| `/api/switch` | `POST` | Safely closes ChatGPT, writes `auth.json`, reopens app |
-| `/api/config` | `POST` | Saves `routerUrl` and `password` encrypted to `~/.codex/switcher_config.dat` |
-| `/api/codex/stop` | `POST` | Gracefully closes running interactive ChatGPT instances |
-| `/api/codex/start` | `POST` | Launches the Windows Store ChatGPT Desktop App |
+The portable Windows executable uses the installed WebView2 runtime. macOS packages use ad hoc signing; distribution without an Apple Developer certificate can still require approval in macOS Privacy & Security settings. CI packaging on Linux and macOS requires a run on those systems; local Windows checks cannot verify their behavior.
 
----
+## Data and behavior
 
-## Keyboard & UI Tips
+- Configuration and account cache: `~/.codex/switcher_config.dat`, `~/.codex/switcher_accounts.dat` (AES-256-GCM).
+- Active login: `~/.codex/auth.json`. Before switching, the app writes a timestamped copy under `~/.codex/backups/`.
+- Existing Windows `.dat` files remain readable by the Tauri app on the same user profile and machine. Encryption keys are tied to the user and computer, so copying `.dat` files to a different computer is not a migration method.
+- Account credentials stay in the Rust backend. The interface receives account details and quota data without OAuth tokens. Old token bearing browser storage is removed when the new interface loads.
+- Settings offer automatic start at login and an optional desktop app launch after switching accounts. When launch is disabled, the account file is updated without opening ChatGPT.
+- The ChatGPT desktop app launcher uses the Windows Store app ID on Windows, `chatgpt` on Linux, and `open -a ChatGPT` on macOS. ChatGPT must be installed for the optional launch to work. [Linux desktop support is currently a preview](https://learn.chatgpt.com/docs/linux/linux-app).
 
-- **Language Toggle**: Click **TR** or **EN** in the top navigation bar to toggle UI language instantly.
-- **Search**: Filter accounts dynamically by email or account ID.
-- **Settings Modal**: Press `Esc` or click outside the dialog to dismiss modals.
-- **Watch Mode**: `npm run dev` uses Node's native `--watch` flag for zero-delay restarts.
+The interface can be closed to the tray. Use the tray menu's **Quit** action to exit fully.
 
----
+## Source layout
 
-## License
+| Path | Purpose |
+| --- | --- |
+| `src-tauri/` | Tauri configuration, Rust IPC, encrypted storage, auth switch, process handling |
+| `public/` | Shared web interface and IPC/HTTP bridge |
+| `electron-main.js`, `server.js`, `lib/` | Previous Electron and Express implementation kept for migration comparison |
 
-This project is licensed under the [MIT License](LICENSE).
+See [Tauri distribution documentation](https://v2.tauri.app/distribute/) for package requirements and code signing.

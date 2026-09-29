@@ -7,6 +7,12 @@
 node_modules/
 dist/
 dist-release/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/Square*Logo.png
+src-tauri/icons/StoreLogo.png
 *.pdb
 sea-prep.blob
 sea-config.json

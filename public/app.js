@@ -47,6 +47,7 @@ const settingsForm = document.getElementById('settingsForm');
 const settingsRouterUrl = document.getElementById('settingsRouterUrl');
 const settingsPassword = document.getElementById('settingsPassword');
 const settingsAutoStart = document.getElementById('settingsAutoStart');
+const settingsLaunchDesktop = document.getElementById('settingsLaunchDesktop');
 const togglePasswordBtn = document.getElementById('togglePasswordBtn');
 const closeSettingsModalBtn = document.getElementById('closeSettingsModalBtn');
 
@@ -65,6 +66,7 @@ function changeLanguage(lang) {
     }
     updateSpotlightUI();
     updateCodexProcessUI();
+    updateRouterStatusUI(!!appState.routerConfig.url);
     renderAccounts(filterAccounts(searchInput.value));
   });
 }
@@ -76,17 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   changeLanguage(currentLang);
 
-  // 1. Instant load from localStorage cache (0ms)
-  try {
-    const localCached = localStorage.getItem('codex_accounts_cache');
-    if (localCached) {
-      const parsed = JSON.parse(localCached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        appState.accounts = parsed;
-        renderAccounts(appState.accounts);
-      }
-    }
-  } catch (e) {}
+  // Older versions cached account tokens in web storage. The encrypted backend cache replaces it.
+  localStorage.removeItem('codex_accounts_cache');
 
   // 2. Fetch server status (updates active account, server cached accounts & processes)
   await loadStatus();
@@ -208,7 +201,7 @@ function setupEventListeners() {
 
 async function loadStatus() {
   try {
-    const res = await fetch('/api/status');
+    const res = await apiFetch('/api/status');
     const data = await res.json();
     if (data.success) {
       appState.routerConfig = data.routerConfig;
@@ -218,15 +211,12 @@ async function loadStatus() {
       // Immediately render cached accounts from server if available
       if (Array.isArray(data.accounts) && data.accounts.length > 0) {
         appState.accounts = data.accounts;
-        try {
-          localStorage.setItem('codex_accounts_cache', JSON.stringify(data.accounts));
-        } catch (e) {}
         renderAccounts(filterAccounts(searchInput.value));
       }
 
       updateSpotlightUI();
       updateCodexProcessUI();
-      updateRouterStatusUI(true);
+      updateRouterStatusUI(!!appState.routerConfig.url);
     }
   } catch (err) {
     console.error('Failed to load initial status:', err);
@@ -238,7 +228,7 @@ async function loadStatus() {
 async function pollProcessStatus() {
   if (document.hidden) return;
   try {
-    const res = await fetch('/api/status');
+    const res = await apiFetch('/api/status');
     const data = await res.json();
     if (data.success) {
       appState.codexStatus = data.codexStatus;
@@ -267,7 +257,7 @@ async function triggerSync(explicitPassword = null) {
       payload.password = explicitPassword;
     }
 
-    const res = await fetch('/api/sync', {
+    const res = await apiFetch('/api/sync', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload)
@@ -276,6 +266,12 @@ async function triggerSync(explicitPassword = null) {
     const data = await res.json();
 
     if (!data.success) {
+      if (data.requiresConfiguration) {
+        openSettingsModal();
+        showToast(t('routerRequiredDesc'), 'info');
+        log(t('routerRequiredDesc'));
+        return;
+      }
       if (data.requiresPassword) {
         openSettingsModal();
         showToast(t('passwordRequiredDesc'), 'info');
@@ -287,9 +283,6 @@ async function triggerSync(explicitPassword = null) {
 
     appState.accounts = data.accounts || [];
     appState.activeAccount = data.activeAccount;
-    try {
-      localStorage.setItem('codex_accounts_cache', JSON.stringify(appState.accounts));
-    } catch (e) {}
 
     renderAccounts(filterAccounts(searchInput.value));
     updateSpotlightUI();
@@ -319,10 +312,10 @@ async function handleSwitch(account) {
   try {
     updateSwitchStep(1, 'active', t('step1Closing'));
 
-    const res = await fetch('/api/switch', {
+    const res = await apiFetch('/api/switch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ accountData: account })
+      body: JSON.stringify({ accountId: account.id })
     });
 
     const data = await res.json();
@@ -334,7 +327,7 @@ async function handleSwitch(account) {
     const wasRunning = data.switchResult ? data.switchResult.wasRunning : false;
     updateSwitchStep(1, 'done', t('step1Done', wasRunning));
     updateSwitchStep(2, 'done', t('step2Done'));
-    updateSwitchStep(3, 'done', t('step3Done'));
+    updateSwitchStep(3, 'done', appState.routerConfig.launchDesktopAfterSwitch === false ? t('step3Skipped') : (data.switchResult?.launched === false ? t('step3Manual') : t('step3Done')));
 
     appState.activeAccount = data.activeAccount;
     appState.accounts = data.accounts || [];
@@ -367,9 +360,11 @@ async function handleRestartCodex() {
   showToast(t('restartingToast'), 'info');
 
   try {
-    await fetch('/api/codex/stop', { method: 'POST' });
+    const stopData = await (await apiFetch('/api/codex/stop', { method: 'POST' })).json();
+    if (!stopData.success) throw new Error(stopData.error || 'Could not stop ChatGPT');
     await new Promise(r => setTimeout(r, 800));
-    await fetch('/api/codex/start', { method: 'POST' });
+    const startData = await (await apiFetch('/api/codex/start', { method: 'POST' })).json();
+    if (!startData.success) throw new Error(startData.error || 'Could not start ChatGPT');
     showToast(t('restartedToast'), 'success');
     log(t('restartedToast'));
     await pollProcessStatus();
@@ -382,7 +377,8 @@ async function handleRestartCodex() {
 
 async function handleStopCodex() {
   try {
-    await fetch('/api/codex/stop', { method: 'POST' });
+    const data = await (await apiFetch('/api/codex/stop', { method: 'POST' })).json();
+    if (!data.success) throw new Error(data.error || 'Could not stop ChatGPT');
     showToast(t('stoppingToast'), 'info');
     await pollProcessStatus();
   } catch (err) {
@@ -392,7 +388,8 @@ async function handleStopCodex() {
 
 async function handleStartCodex() {
   try {
-    await fetch('/api/codex/start', { method: 'POST' });
+    const data = await (await apiFetch('/api/codex/start', { method: 'POST' })).json();
+    if (!data.success) throw new Error(data.error || 'Could not start ChatGPT');
     showToast(t('restartedToast'), 'success');
     await pollProcessStatus();
   } catch (err) {
@@ -402,10 +399,11 @@ async function handleStartCodex() {
 
 function openSettingsModal() {
   settingsRouterUrl.value = appState.routerConfig.url || '';
+  if (settingsLaunchDesktop) settingsLaunchDesktop.checked = appState.routerConfig.launchDesktopAfterSwitch !== false;
   settingsPassword.value = '';
 
   // Fetch current autostart setting
-  fetch('/api/autostart')
+  apiFetch('/api/autostart')
     .then(r => r.json())
     .then(d => {
       if (settingsAutoStart) settingsAutoStart.checked = !!d.enabled;
@@ -420,17 +418,17 @@ async function saveSettings() {
   const password = settingsPassword.value.trim();
 
   try {
-    const res = await fetch('/api/config', {
+    const res = await apiFetch('/api/config', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ routerUrl: url, password })
+      body: JSON.stringify({ routerUrl: url, password, launchDesktopAfterSwitch: settingsLaunchDesktop?.checked ?? true })
     });
     const data = await res.json();
 
-    // Save autostart setting
-    if (settingsAutoStart) {
+    // Save autostart setting only after the configuration was saved.
+    if (data.success && settingsAutoStart) {
       try {
-        await fetch('/api/autostart', {
+        await apiFetch('/api/autostart', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ enabled: settingsAutoStart.checked })
@@ -534,9 +532,7 @@ function updateCodexProcessUI() {
 }
 
 function updateRouterStatusUI(connected = true) {
-  const url = appState.routerConfig.url || '9Router';
-  const domain = url.replace(/^https?:\/\//, '').split('/')[0];
-  routerStatusText.textContent = domain;
+  routerStatusText.textContent = appState.routerConfig.url ? '9Router' : t('routerNotConfigured');
   statusDot.className = `status-dot-mini ${connected ? '' : 'offline'}`;
 }
 
@@ -557,8 +553,9 @@ function renderAccounts(accounts) {
     const row = document.createElement('div');
     row.className = `account-row ${acc.isActive ? 'is-active-row' : ''}`;
 
-    const plan = (acc.plan || 'plus').toLowerCase();
-    const idShort = acc.accountId ? acc.accountId.slice(0, 8) + '...' + acc.accountId.slice(-4) : '-';
+    const plan = String(acc.plan || 'plus').toLowerCase();
+    const planClass = ['free', 'plus', 'pro', 'team', 'business', 'enterprise', 'edu'].includes(plan) ? plan : 'plus';
+    const idShort = acc.accountId ? String(acc.accountId).slice(0, 8) + '...' + String(acc.accountId).slice(-4) : '-';
 
     // Limits info HTML (Shows REMAINING / KALAN and RESET CREDITS)
     let limitsHtml = '';
@@ -620,11 +617,11 @@ function renderAccounts(accounts) {
         <div class="account-row-info">
           <div class="account-row-title-line">
             <span class="row-email" title="${escapeHtml(acc.email)}">${escapeHtml(acc.email)}</span>
-            <span class="row-plan-badge ${plan}">${plan}</span>
+            <span class="row-plan-badge ${planClass}">${escapeHtml(plan)}</span>
           </div>
           <div class="account-row-subline">
             <span>ID:</span>
-            <span class="row-id" title="${escapeHtml(acc.accountId || '')}">${idShort}</span>
+            <span class="row-id" title="${escapeHtml(acc.accountId || '')}">${escapeHtml(idShort)}</span>
           </div>
         </div>
       </div>
@@ -637,7 +634,7 @@ function renderAccounts(accounts) {
             ${t('activeBadge')}
           </div>
         ` : `
-          <button class="btn btn-default btn-sm btn-switch-action" data-id="${acc.id}">
+          <button class="btn btn-default btn-sm btn-switch-action">
             ${t('switchBtn')}
           </button>
         `}

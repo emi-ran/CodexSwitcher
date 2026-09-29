@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="icon" type="image/png" href="/assets/icon.png">
+  <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
     <header class="app-header">
       <div class="header-left">
         <div class="app-logo">
-          <img src="/assets/icon.png" alt="Codex Switcher" style="width: 24px; height: 24px; border-radius: 5px; object-fit: contain;">
+          <img src="icon.png" alt="Codex Switcher" style="width: 24px; height: 24px; border-radius: 5px; object-fit: contain;">
         </div>
         <div class="header-title-wrap">
           <span class="app-title">Codex Switcher</span>
@@ -206,7 +206,7 @@
       <form id="settingsForm" class="clean-form">
         <div class="form-row">
           <label for="settingsRouterUrl" class="field-label" id="labelRouterUrl" data-i18n="routerUrlLabel">9Router Adresi</label>
-          <input type="text" id="settingsRouterUrl" class="clean-input" placeholder="" required>
+          <input type="url" id="settingsRouterUrl" class="clean-input" placeholder="https://router.example.com" required>
         </div>
 
         <div class="form-row">
@@ -221,9 +221,17 @@
         <div class="form-row form-row-checkbox">
           <label class="checkbox-container" id="labelAutoStart">
             <input type="checkbox" id="settingsAutoStart">
-            <span class="checkbox-text" data-i18n="autoStartLabel">Windows ile birlikte başlat</span>
+            <span class="checkbox-text" data-i18n="autoStartLabel">Bilgisayar açıldığında başlat</span>
           </label>
           <span class="field-help" id="autoStartHelpText" data-i18n="autoStartHelp">Bilgisayar açıldığında sistem tepsisinde (tray) otomatik başlar</span>
+        </div>
+
+        <div class="form-row form-row-checkbox">
+          <label class="checkbox-container" id="labelLaunchDesktop">
+            <input type="checkbox" id="settingsLaunchDesktop">
+            <span class="checkbox-text" data-i18n="launchDesktopLabel">Hesap değişiminden sonra ChatGPT'yi aç</span>
+          </label>
+          <span class="field-help" data-i18n="launchDesktopHelp">Kapalıysa yalnızca auth.json güncellenir</span>
         </div>
 
         <div class="modal-foot modal-foot-form">
@@ -237,6 +245,7 @@
   <div class="toast-wrapper" id="toastContainer"></div>
 
   <script src="i18n.js"></script>
+  <script src="api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

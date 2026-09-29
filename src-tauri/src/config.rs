@@ -41,6 +41,11 @@ pub fn save(router_url: String, password: String, launch_desktop: bool) -> Resul
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("Router URL must begin with https:// or http://".into());
     }
+    let password = if password.trim().is_empty() {
+        load()?["password"].as_str().unwrap_or_default().to_owned()
+    } else {
+        password
+    };
     let value = json!({
         "routerUrl": url,
         "password": password,

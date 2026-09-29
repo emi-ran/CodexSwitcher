@@ -43,7 +43,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
       - name: Check version tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -74,7 +74,10 @@ jobs:
             cp src-tauri/target/release/bundle/deb/*.deb release-assets/
             cp src-tauri/target/release/bundle/appimage/*.AppImage release-assets/
           else
-            cp src-tauri/target/release/bundle/dmg/*.dmg release-assets/
+            version=$(node -p "require('./package.json').version")
+            dmg=(src-tauri/target/release/bundle/dmg/*.dmg)
+            test "${#dmg[@]}" -eq 1
+            cp "${dmg[0]}" "release-assets/CodexSwitcher-${version}-${{ matrix.id }}.dmg"
           fi
       - uses: actions/upload-artifact@v4
         with:

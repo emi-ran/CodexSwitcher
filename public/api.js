@@ -1,7 +1,5 @@
-// Use Tauri IPC in the desktop app; keep HTTP calls for the existing Electron build.
+// The desktop app communicates with the Rust backend through Tauri IPC.
 async function apiFetch(path, options = {}) {
-  if (!window.__TAURI__?.core?.invoke) return fetch(path, options);
-
   const invoke = window.__TAURI__.core.invoke;
   const body = options.body ? JSON.parse(options.body) : {};
   let data;

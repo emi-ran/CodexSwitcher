@@ -10,9 +10,10 @@ use std::path::{Path, PathBuf};
 const MAGIC: &[u8; 4] = b"CDXV";
 
 pub fn codex_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .ok_or("Home directory is unavailable")?;
+    #[cfg(windows)]
+    let home = std::env::var_os("USERPROFILE").ok_or("USERPROFILE is unavailable")?;
+    #[cfg(not(windows))]
+    let home = std::env::var_os("HOME").ok_or("HOME is unavailable")?;
     Ok(PathBuf::from(home).join(".codex"))
 }
 

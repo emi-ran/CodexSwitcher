@@ -10,15 +10,15 @@ Codex Switcher, 9Router üzerindeki Codex hesaplarını eşitler, kullanım limi
 
 ```bash
 npm ci
-npm run tauri -- dev
+npm run dev
 ```
 
-Geçiş süresince eski Electron sürümü `npm start` ile açılabilir. Tauri paketi Rust IPC kullanır; Node.js ve Express'i paketlemez.
+`npm start` da Tauri'yi açar. Node.js yalnızca geliştirme aracıdır; dağıtım paketleri Rust IPC ve sistem webview bileşenini kullanır.
 
 ## Paketleme ve sürüm çıkarma
 
 ```bash
-npm run tauri -- build
+npm run build
 ```
 
 [Release iş akışı](.github/workflows/release.yml) Windows x64, Linux x64, macOS Apple Silicon ve macOS Intel paketlerini kendi işletim sistemi runner'larında derler. Manuel iş akışı çalıştırması indirilebilir CI çıktıları üretir. `package.json` sürümüyle eşleşen `v<version>` etiketi ayrıca GitHub Release yayımlar.
@@ -38,6 +38,10 @@ Windows portable dosyası sistemdeki WebView2 çalışma zamanını kullanır. m
 - Eski Windows `.dat` dosyaları aynı kullanıcı profili ve bilgisayarda Tauri uygulaması tarafından okunur. Şifreleme anahtarı kullanıcıya ve bilgisayara bağlıdır; `.dat` dosyalarını başka bilgisayara kopyalamak geçiş yöntemi değildir.
 - OAuth tokenları Rust arka uçta kalır. Arayüze token içermeyen hesap ve kota bilgileri gönderilir. Eski sürümün tarayıcı depolamasındaki token içeren önbellek açılışta silinir.
 - Ayarlarda oturum açınca otomatik başlatma ve hesap değişiminden sonra masaüstü uygulamasını açma seçeneği vardır. İkinci seçenek kapalıysa yalnızca hesap dosyası güncellenir.
+- Ayarları kaydederken şifre alanı boş bırakılırsa kayıtlı şifre korunur.
+- `ROUTER_URL` ve `ROUTER_PASSWORD`, yalnızca ilgili ayar kaydedilmemişse yedek değer olarak kullanılır. Kayıtlı ayarlar önceliklidir.
+- NSIS kurulumunda masaüstü kısayolu seçilebilir ve Windows oturumunda otomatik başlatma sorulur. MSI kurulumunda masaüstü kısayolu ve otomatik başlatma özellikleri seçilebilir. İkisi de Windows Uygulamalar listesinde görünür. Etkileşimli kaldırmada `.codex` verileri varsayılan olarak korunur; istenirse yalnızca Switcher ayar ve hesap önbelleği dosyaları silinir. `auth.json` ve yedekleri silinmez. Sessiz MSI kaldırması `.codex` verilerini korur.
+- Windows portable `.exe` dosyasının kurulum veya kaldırma sihirbazı yoktur. Linux ya da macOS uygulaması kaldırıldığında `~/.codex` içindeki Switcher dosyaları kalır; gerekirse bu dosyaları `auth.json` ve yedeklere dokunmadan elle silin.
 - İsteğe bağlı uygulama açma, Windows'ta Store uygulama kimliğini, Linux'ta `chatgpt` komutunu, macOS'ta `open -a ChatGPT` komutunu kullanır. [Linux masaüstü sürümü şu anda önizlemededir](https://learn.chatgpt.com/docs/linux/linux-app).
 
 Pencere kapatıldığında uygulama sistem tepsisinde kalır. Tam çıkış için tepsi menüsündeki **Quit** öğesini kullanın.
@@ -47,7 +51,7 @@ Pencere kapatıldığında uygulama sistem tepsisinde kalır. Tam çıkış içi
 | Yol | Görev |
 | --- | --- |
 | `src-tauri/` | Tauri ayarları, Rust IPC, şifreli depolama, hesap ve süreç yönetimi |
-| `public/` | Ortak arayüz ve IPC/HTTP köprüsü |
-| `electron-main.js`, `server.js`, `lib/` | Geçiş karşılaştırması için tutulan eski Electron ve Express uygulaması |
+| `public/` | Arayüz ve Tauri IPC köprüsü |
+| `src-tauri/windows/` | Windows kurulum özelleştirmeleri |
 
 Paket gereksinimleri ve imzalama için [Tauri dağıtım belgelerine](https://v2.tauri.app/distribute/) bakın.

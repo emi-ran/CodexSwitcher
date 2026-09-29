@@ -5,6 +5,76 @@ mod router;
 mod usage;
 mod vault;
 
+#[cfg(windows)]
+pub fn windows_uninstall_cleanup(prompt: bool) -> i32 {
+    use windows::core::w;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegDeleteValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDYES, MB_ICONQUESTION, MB_OK, MB_YESNO,
+    };
+
+    // MSI runs this as the uninstalling user before it removes the executable.
+    unsafe {
+        let mut run_key = HKEY::default();
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+            Some(0),
+            KEY_SET_VALUE,
+            &mut run_key,
+        )
+        .is_ok()
+        {
+            let _ = RegDeleteValueW(run_key, w!("CodexSwitcher"));
+            let _ = RegCloseKey(run_key);
+        }
+    }
+    if !prompt {
+        return 0;
+    }
+    let answer = unsafe {
+        MessageBoxW(
+            None,
+            w!("Delete CodexSwitcher settings and account cache from your .codex folder? Codex auth.json and backups will be kept."),
+            w!("Uninstall CodexSwitcher"),
+            MB_YESNO | MB_ICONQUESTION,
+        )
+    };
+    if answer != IDYES {
+        return 0;
+    }
+    let Ok(dir) = vault::codex_dir() else {
+        unsafe {
+            MessageBoxW(
+                None,
+                w!("Your .codex folder could not be located. CodexSwitcher data was kept."),
+                w!("Uninstall CodexSwitcher"),
+                MB_OK,
+            );
+        }
+        return 0;
+    };
+    for name in [
+        "switcher_config.dat",
+        "switcher_accounts.dat",
+        "switcher_config.json",
+        "switcher_accounts_cache.json",
+    ] {
+        let path = dir.join(name);
+        if let Err(error) = std::fs::remove_file(path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                unsafe {
+                    MessageBoxW(None, w!("Some CodexSwitcher data could not be deleted. Please check your .codex folder."), w!("Uninstall CodexSwitcher"), MB_OK);
+                }
+                return 0;
+            }
+        }
+    }
+    0
+}
+
 use serde_json::{json, Value};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
@@ -157,18 +227,6 @@ fn start_desktop() -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn get_settings() -> Result<Value, String> {
-    let loaded = config::load()?;
-    Ok(json!({
-        "routerConfig": {
-            "url": loaded["routerUrl"],
-            "hasPassword": loaded["hasPassword"],
-            "launchDesktopAfterSwitch": loaded["launchDesktopAfterSwitch"]
-        }
-    }))
-}
-
-#[tauri::command]
 fn save_settings(
     router_url: String,
     password: String,
@@ -270,7 +328,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            get_settings,
             save_settings,
             get_autostart,
             set_autostart,

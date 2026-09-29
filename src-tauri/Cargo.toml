@@ -25,4 +25,4 @@ chrono = { version = "0.4", features = ["serde"] }
 sysinfo = "0.33"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }

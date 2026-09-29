@@ -10,15 +10,15 @@ Install [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for 
 
 ```bash
 npm ci
-npm run tauri -- dev
+npm run dev
 ```
 
-The older Electron app remains available with `npm start` during migration. The Tauri build uses Rust IPC and does not package Node.js or Express.
+`npm start` also launches Tauri. Node.js is only a development tool; release packages use Rust IPC and the system webview.
 
 ## Build and release
 
 ```bash
-npm run tauri -- build
+npm run build
 ```
 
 The [release workflow](.github/workflows/release.yml) builds Windows x64, Linux x64, macOS Apple Silicon, and macOS Intel on their native runners. A manual workflow run builds downloadable CI artifacts. A matching `v<package.json version>` tag also publishes a GitHub Release. The expected files are:
@@ -38,6 +38,10 @@ The portable Windows executable uses the installed WebView2 runtime. macOS packa
 - Existing Windows `.dat` files remain readable by the Tauri app on the same user profile and machine. Encryption keys are tied to the user and computer, so copying `.dat` files to a different computer is not a migration method.
 - Account credentials stay in the Rust backend. The interface receives account details and quota data without OAuth tokens. Old token bearing browser storage is removed when the new interface loads.
 - Settings offer automatic start at login and an optional desktop app launch after switching accounts. When launch is disabled, the account file is updated without opening ChatGPT.
+- Leaving the password field empty when saving settings keeps the saved password.
+- `ROUTER_URL` and `ROUTER_PASSWORD` provide fallback values only when the corresponding setting has not been saved. Saved settings take precedence.
+- The NSIS setup offers a desktop shortcut and asks whether to start with Windows. MSI presents desktop shortcut and startup features. Both installers appear in Windows Apps. Their interactive uninstallers preserve `.codex` data by default and offer optional deletion of Switcher settings and account cache files; `auth.json` and backups are never removed. Silent MSI uninstall preserves `.codex` data.
+- The portable Windows `.exe` has no installer or uninstaller. Removing the Linux or macOS app leaves the Switcher files in `~/.codex`; remove those files manually if needed, while keeping `auth.json` and backups.
 - The ChatGPT desktop app launcher uses the Windows Store app ID on Windows, `chatgpt` on Linux, and `open -a ChatGPT` on macOS. ChatGPT must be installed for the optional launch to work. [Linux desktop support is currently a preview](https://learn.chatgpt.com/docs/linux/linux-app).
 
 The interface can be closed to the tray. Use the tray menu's **Quit** action to exit fully.
@@ -47,7 +51,7 @@ The interface can be closed to the tray. Use the tray menu's **Quit** action to 
 | Path | Purpose |
 | --- | --- |
 | `src-tauri/` | Tauri configuration, Rust IPC, encrypted storage, auth switch, process handling |
-| `public/` | Shared web interface and IPC/HTTP bridge |
-| `electron-main.js`, `server.js`, `lib/` | Previous Electron and Express implementation kept for migration comparison |
+| `public/` | Web interface and Tauri IPC bridge |
+| `src-tauri/windows/` | Windows installer customization |
 
 See [Tauri distribution documentation](https://v2.tauri.app/distribute/) for package requirements and code signing.

@@ -112,7 +112,40 @@ fn public_active(active: Option<&Value>, accounts: &[Value]) -> Option<Value> {
 }
 
 #[tauri::command]
-fn get_status(state: tauri::State<'_, AppState>) -> Result<Value, String> {
+async fn get_status(app: tauri::AppHandle) -> Result<Value, String> {
+    on_worker(move || status_response(&app.state::<AppState>())).await
+}
+
+async fn on_worker(
+    operation: impl FnOnce() -> Result<Value, String> + Send + 'static,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("Background operation failed: {error}"))?
+}
+
+#[cfg(test)]
+mod worker_tests {
+    use super::*;
+
+    #[test]
+    fn blocking_work_runs_off_the_calling_thread() {
+        let caller = std::thread::current().id();
+        let result = tauri::async_runtime::block_on(on_worker(move || {
+            assert_ne!(std::thread::current().id(), caller);
+            Ok(json!({ "success": true }))
+        }));
+        assert_eq!(result.unwrap(), json!({ "success": true }));
+    }
+
+    #[test]
+    fn worker_preserves_operation_errors() {
+        let result = tauri::async_runtime::block_on(on_worker(|| Err("operation failed".into())));
+        assert_eq!(result.unwrap_err(), "operation failed");
+    }
+}
+
+fn status_response(state: &AppState) -> Result<Value, String> {
     let settings = config::load()?;
     let active = auth::current()?;
     let mut accounts = state.accounts.lock().map_err(|e| e.to_string())?.clone();
@@ -173,7 +206,11 @@ async fn sync_accounts(
 }
 
 #[tauri::command]
-fn switch_account(state: tauri::State<'_, AppState>, account_id: String) -> Result<Value, String> {
+async fn switch_account(app: tauri::AppHandle, account_id: String) -> Result<Value, String> {
+    on_worker(move || switch_account_blocking(&app.state::<AppState>(), account_id)).await
+}
+
+fn switch_account_blocking(state: &AppState, account_id: String) -> Result<Value, String> {
     let mut accounts = state.accounts.lock().map_err(|e| e.to_string())?;
     let account = accounts
         .iter()
@@ -217,13 +254,13 @@ fn switch_account(state: tauri::State<'_, AppState>, account_id: String) -> Resu
 }
 
 #[tauri::command]
-fn stop_desktop() -> Result<Value, String> {
-    desktop::stop()
+async fn stop_desktop() -> Result<Value, String> {
+    on_worker(desktop::stop).await
 }
 
 #[tauri::command]
-fn start_desktop() -> Result<Value, String> {
-    desktop::start()
+async fn start_desktop() -> Result<Value, String> {
+    on_worker(desktop::start).await
 }
 
 #[tauri::command]

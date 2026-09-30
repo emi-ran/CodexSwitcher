@@ -14,6 +14,14 @@ const I18N = {
     resetCredits: 'Sıfırlama Hakkı',
     manualReset: 'Manuel Sıfırlama',
     accountsTitle: 'Codex Hesapları',
+    bestChoice: 'En iyi seçim',
+    bestChoiceHelp: 'İki kotası da kullanılabilir hesaplar arasında kalan en düşük kota payı en yüksek olan hesap.',
+    quotaUnknown: 'Kota bilgisi yok',
+    usageUnavailable: 'Kota alınamadı',
+    sessionExpiredHelp: 'Oturumu yenileyip hesapları tekrar senkronize edin.',
+    resetCreditsHelp: 'Manuel sıfırlama hakkıdır; bitmiş kota otomatik kullanılabilir sayılmaz.',
+    fiveHourQuota: '5 saatlik kota',
+    weeklyQuota: 'Haftalık kota',
     searchPlaceholder: 'Hesap ara (e-posta veya ID)...',
     activeBadge: 'Aktif',
     switchBtn: 'Geçiş Yap',
@@ -93,6 +101,14 @@ const I18N = {
     resetCredits: 'Reset Credits',
     manualReset: 'Manual Reset',
     accountsTitle: 'Codex Accounts',
+    bestChoice: 'Best choice',
+    bestChoiceHelp: 'The account with the most headroom in its smaller remaining quota, among accounts with both quotas available.',
+    quotaUnknown: 'Quota unavailable',
+    usageUnavailable: 'Could not fetch quota',
+    sessionExpiredHelp: 'Renew the session and sync accounts again.',
+    resetCreditsHelp: 'Manual reset credits; exhausted quotas are not automatically considered available.',
+    fiveHourQuota: '5-hour quota',
+    weeklyQuota: 'Weekly quota',
     searchPlaceholder: 'Search accounts (email or ID)...',
     activeBadge: 'Active',
     switchBtn: 'Switch',
@@ -220,10 +236,10 @@ function applyLanguage(lang, onLanguageChangeCallback) {
     el.placeholder = t(key);
   });
 
-  // Update title attribute of elements with data-i18n-title
-  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
-    const key = el.getAttribute('data-i18n-title');
-    el.title = t(key);
+  document.querySelectorAll('[data-i18n-tooltip]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-tooltip');
+    el.dataset.tooltip = t(key);
+    el.setAttribute('aria-label', t(key));
   });
 
   // Trigger optional callback for component re-rendering

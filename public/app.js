@@ -59,6 +59,7 @@ const switchModalCloseBtn = document.getElementById('switchModalCloseBtn');
 const toastContainer = document.getElementById('toastContainer');
 
 function changeLanguage(lang) {
+  window.hideAppTooltip?.();
   applyLanguage(lang, () => {
     if (togglePasswordBtn) {
       const isPassword = settingsPassword.type === 'password';
@@ -96,6 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 let pollInterval = null;
+let processPollInFlight = false;
 
 function startPolling() {
   if (pollInterval || document.hidden) return;
@@ -226,7 +228,8 @@ async function loadStatus() {
 }
 
 async function pollProcessStatus() {
-  if (document.hidden) return;
+  if (document.hidden || processPollInFlight) return;
+  processPollInFlight = true;
   try {
     const res = await apiFetch('/api/status');
     const data = await res.json();
@@ -240,6 +243,8 @@ async function pollProcessStatus() {
     }
   } catch (e) {
     // Silent fail on polling
+  } finally {
+    processPollInFlight = false;
   }
 }
 
@@ -468,6 +473,8 @@ function updateSpotlightUI() {
     spotlightEmail.textContent = t('noActiveSession');
     spotlightPlanBadge.textContent = 'NONE';
     spotlightAccountId.textContent = '-';
+    spotlightAccountId.dataset.tooltip = '';
+    spotlightAccountId.tabIndex = -1;
     if (activeLimitsGrid) activeLimitsGrid.style.display = 'none';
     return;
   }
@@ -475,7 +482,8 @@ function updateSpotlightUI() {
   spotlightEmail.textContent = acc.email || 'ChatGPT Account';
   spotlightPlanBadge.textContent = (acc.plan || 'PLUS').toUpperCase();
   spotlightAccountId.textContent = acc.accountId ? acc.accountId : 'N/A';
-  spotlightAccountId.title = acc.accountId || '';
+  spotlightAccountId.dataset.tooltip = acc.accountId || '';
+  spotlightAccountId.tabIndex = acc.accountId ? 0 : -1;
 
   if (acc.lastRefresh) {
     spotlightLastRefresh.textContent = `${t('updatedAt', new Date(acc.lastRefresh).toLocaleTimeString())}`;
@@ -484,23 +492,26 @@ function updateSpotlightUI() {
   }
 
   // Render 5h and Weekly Limits for Active Account (Remaining / Kalan)
-  if (acc.usage && acc.usage.primary && activeLimitsGrid) {
+  if (acc.usage && !acc.usage.error && acc.usage.primary && activeLimitsGrid) {
     activeLimitsGrid.style.display = 'grid';
 
-    const used5 = acc.usage.primary.usedPercent || 0;
-    const rem5 = Math.max(0, 100 - used5);
-    active5hPercent.textContent = formatPercent(rem5);
-    active5hFill.style.width = `${rem5}%`;
-    active5hFill.className = `limit-bar-fill ${rem5 <= 10 ? 'danger' : (rem5 <= 25 ? 'warning' : '')}`;
+    const rem5 = getRemainingQuota(acc.usage.primary);
+    active5hPercent.textContent = rem5 === null ? '—' : formatPercent(rem5);
+    active5hFill.style.width = `${rem5 ?? 0}%`;
+    active5hFill.className = `limit-bar-fill ${rem5 !== null && rem5 <= 10 ? 'danger' : (rem5 !== null && rem5 <= 25 ? 'warning' : '')}`;
     active5hReset.textContent = t('resetsIn', formatResetTime(acc.usage.primary.resetAfterSeconds));
 
     if (acc.usage.secondary) {
-      const usedW = acc.usage.secondary.usedPercent || 0;
-      const remW = Math.max(0, 100 - usedW);
-      activeWeeklyPercent.textContent = formatPercent(remW);
-      activeWeeklyFill.style.width = `${remW}%`;
-      activeWeeklyFill.className = `limit-bar-fill ${remW <= 10 ? 'danger' : (remW <= 25 ? 'warning' : '')}`;
+      const remW = getRemainingQuota(acc.usage.secondary);
+      activeWeeklyPercent.textContent = remW === null ? '—' : formatPercent(remW);
+      activeWeeklyFill.style.width = `${remW ?? 0}%`;
+      activeWeeklyFill.className = `limit-bar-fill ${remW !== null && remW <= 10 ? 'danger' : (remW !== null && remW <= 25 ? 'warning' : '')}`;
       activeWeeklyReset.textContent = t('resetsIn', formatResetTime(acc.usage.secondary.resetAfterSeconds));
+    } else {
+      activeWeeklyPercent.textContent = '—';
+      activeWeeklyFill.style.width = '0%';
+      activeWeeklyFill.className = 'limit-bar-fill';
+      activeWeeklyReset.textContent = t('quotaUnknown');
     }
 
     const activeCreditsCard = document.getElementById('activeCreditsCard');
@@ -521,12 +532,14 @@ function updateCodexProcessUI() {
   if (isRunning) {
     processDot.className = 'indicator-dot running';
     processText.textContent = t('runningBadge');
-    toggleCodexProcessBtn.title = t('stopChatGpt');
+    toggleCodexProcessBtn.dataset.tooltip = t('stopChatGpt');
+    toggleCodexProcessBtn.setAttribute('aria-label', t('stopChatGpt'));
     processActionIcon.innerHTML = '<rect x="6" y="6" width="12" height="12"/>';
   } else {
     processDot.className = 'indicator-dot stopped';
     processText.textContent = t('stoppedBadge');
-    toggleCodexProcessBtn.title = t('startChatGpt');
+    toggleCodexProcessBtn.dataset.tooltip = t('startChatGpt');
+    toggleCodexProcessBtn.setAttribute('aria-label', t('startChatGpt'));
     processActionIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
   }
 }
@@ -537,8 +550,11 @@ function updateRouterStatusUI(connected = true) {
 }
 
 function renderAccounts(accounts) {
+  window.hideAppTooltip?.();
+  const sortedAccounts = rankAccounts(accounts || []);
+  const bestAccount = sortedAccounts.find(account => getAccountRank(account).group === 0);
   accountsGrid.innerHTML = '';
-  accountsCount.textContent = accounts.length;
+  accountsCount.textContent = sortedAccounts.length;
 
   if (!accounts || accounts.length === 0) {
     emptyState.style.display = 'flex';
@@ -549,7 +565,7 @@ function renderAccounts(accounts) {
 
   emptyState.style.display = 'none';
 
-  accounts.forEach((acc) => {
+  sortedAccounts.forEach((acc) => {
     const row = document.createElement('div');
     row.className = `account-row ${acc.isActive ? 'is-active-row' : ''}`;
 
@@ -561,26 +577,28 @@ function renderAccounts(accounts) {
     let limitsHtml = '';
     if (acc.usage) {
       if (acc.usage.error) {
-        limitsHtml = `<span class="row-error-badge" title="${escapeHtml(acc.usage.error)}">${t('sessionExpired')}</span>`;
+        const expired = /\b401\b/.test(acc.usage.error);
+        const errorLabel = t(expired ? 'sessionExpired' : 'usageUnavailable');
+        const errorDetail = expired ? t('sessionExpiredHelp') : String(acc.usage.error);
+        limitsHtml = `<span class="row-error-badge" tabindex="0" data-tooltip="${escapeHtml(errorLabel)}" data-tooltip-detail="${escapeHtml(errorDetail)}">${errorLabel}</span>`;
       } else if (acc.usage.primary) {
-        const used5 = acc.usage.primary.usedPercent || 0;
-        const rem5 = Math.max(0, 100 - used5);
-
-        const usedW = acc.usage.secondary ? (acc.usage.secondary.usedPercent || 0) : 0;
-        const remW = Math.max(0, 100 - usedW);
+        const rem5 = getRemainingQuota(acc.usage.primary);
+        const remW = getRemainingQuota(acc.usage.secondary);
+        const percent5 = rem5 === null ? '—' : formatPercent(rem5);
+        const percentW = remW === null ? '—' : formatPercent(remW);
 
         const t5 = formatResetTime(acc.usage.primary.resetAfterSeconds);
         const tW = acc.usage.secondary ? formatResetTime(acc.usage.secondary.resetAfterSeconds) : '';
-        const c5Class = rem5 <= 10 ? 'danger' : (rem5 <= 25 ? 'warning' : '');
-        const cwClass = remW <= 10 ? 'danger' : (remW <= 25 ? 'warning' : '');
+        const c5Class = rem5 !== null && rem5 <= 10 ? 'danger' : (rem5 !== null && rem5 <= 25 ? 'warning' : '');
+        const cwClass = remW !== null && remW <= 10 ? 'danger' : (remW !== null && remW <= 25 ? 'warning' : '');
 
-        const tip5 = `5h ${t('remaining')}: ${formatPercent(rem5)} (${t('resetsIn', t5)})`;
-        const tipW = `W ${t('remaining')}: ${formatPercent(remW)} (${t('resetsIn', tW)})`;
+        const tip5 = rem5 === null ? t('quotaUnknown') : `${t('remaining')}: ${percent5}\n${t('resetsIn', t5)}`;
+        const tipW = remW === null ? t('quotaUnknown') : `${t('remaining')}: ${percentW}\n${t('resetsIn', tW)}`;
 
         // If account has reset credits available, display badge
         const hasCredits = typeof acc.usage.resetCredits === 'number' && acc.usage.resetCredits > 0;
         const creditsHtml = hasCredits ? `
-          <div class="mini-credits-pill" title="${t('resetCredits')}: ${acc.usage.resetCredits}">
+          <div class="mini-credits-pill" tabindex="0" data-tooltip="${t('resetCredits')}: ${acc.usage.resetCredits}" data-tooltip-detail="${escapeHtml(t('resetCreditsHelp'))}">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
               <path d="M3 3v5h5"/>
@@ -591,24 +609,27 @@ function renderAccounts(accounts) {
 
         limitsHtml = `
           <div class="row-limits-wrap">
-            <div class="mini-limit-item" title="${tip5}">
+            <div class="mini-limit-item" tabindex="0" data-tooltip="${t('fiveHourQuota')}" data-tooltip-detail="${escapeHtml(tip5)}">
               <span class="mini-limit-tag">5h</span>
               <div class="mini-bar-track">
-                <div class="mini-bar-fill ${c5Class}" style="width: ${rem5}%"></div>
+                <div class="mini-bar-fill ${c5Class}" style="width: ${rem5 ?? 0}%"></div>
               </div>
-              <span class="mini-limit-val">${formatPercent(rem5)}</span>
+              <span class="mini-limit-val">${percent5}</span>
             </div>
-            <div class="mini-limit-item" title="${tipW}">
+            <div class="mini-limit-item" tabindex="0" data-tooltip="${t('weeklyQuota')}" data-tooltip-detail="${escapeHtml(tipW)}">
               <span class="mini-limit-tag">W</span>
               <div class="mini-bar-track">
-                <div class="mini-bar-fill ${cwClass}" style="width: ${remW}%"></div>
+                <div class="mini-bar-fill ${cwClass}" style="width: ${remW ?? 0}%"></div>
               </div>
-              <span class="mini-limit-val">${formatPercent(remW)}</span>
+              <span class="mini-limit-val">${percentW}</span>
             </div>
             ${creditsHtml}
           </div>
         `;
       }
+    }
+    if (!limitsHtml) {
+      limitsHtml = `<span class="row-quota-unknown" tabindex="0" data-tooltip="${t('quotaUnknown')}">${t('quotaUnknown')}</span>`;
     }
 
     row.innerHTML = `
@@ -616,12 +637,13 @@ function renderAccounts(accounts) {
         <span class="row-status-dot"></span>
         <div class="account-row-info">
           <div class="account-row-title-line">
-            <span class="row-email" title="${escapeHtml(acc.email)}">${escapeHtml(acc.email)}</span>
+            <span class="row-email" tabindex="0" data-tooltip="${escapeHtml(acc.email)}">${escapeHtml(acc.email)}</span>
             <span class="row-plan-badge ${planClass}">${escapeHtml(plan)}</span>
+            ${acc === bestAccount ? `<span class="best-choice-badge" tabindex="0" data-tooltip="${t('bestChoice')}" data-tooltip-detail="${escapeHtml(t('bestChoiceHelp'))}">${t('bestChoice')}</span>` : ''}
           </div>
           <div class="account-row-subline">
             <span>ID:</span>
-            <span class="row-id" title="${escapeHtml(acc.accountId || '')}">${escapeHtml(idShort)}</span>
+            <span class="row-id" tabindex="0" data-tooltip="${escapeHtml(acc.accountId || '')}">${escapeHtml(idShort)}</span>
           </div>
         </div>
       </div>

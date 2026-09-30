@@ -29,7 +29,7 @@
         <div class="status-indicator-pill" id="codexStatusPill">
           <span class="indicator-dot" id="processDot"></span>
           <span id="processText">ChatGPT</span>
-          <button class="pill-action-btn" id="toggleCodexProcessBtn" title="ChatGPT Durumu">
+          <button class="pill-action-btn" id="toggleCodexProcessBtn" data-tooltip="ChatGPT Durumu" aria-label="ChatGPT Durumu">
             <svg id="processActionIcon" width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
@@ -43,7 +43,7 @@
           <span id="syncBtnText" data-i18n="syncBtn">Senkronize Et</span>
         </button>
 
-        <button class="btn btn-icon" id="openSettingsBtn" title="Ayarlar" data-i18n-title="settingsBtn">
+        <button class="btn btn-icon" id="openSettingsBtn" data-tooltip="Ayarlar" aria-label="Ayarlar" data-i18n-tooltip="settingsBtn">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -246,6 +246,8 @@
 
   <script src="i18n.js"></script>
   <script src="api.js"></script>
+  <script src="account-ranking.js"></script>
+  <script src="tooltips.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

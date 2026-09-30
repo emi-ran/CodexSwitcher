@@ -92,13 +92,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - uses: actions/download-artifact@v4
         with:
           pattern: tauri-*
           path: release-assets
           merge-multiple: true
+      - name: Prepare release description
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: node .github/scripts/release-notes.cjs --tag "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" --assets release-assets --output release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
+          name: Codex Switcher ${{ github.ref_name }}
+          body_path: release-notes.md
           files: release-assets/*
           fail_on_unmatched_files: true
           generate_release_notes: true

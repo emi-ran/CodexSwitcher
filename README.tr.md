@@ -33,6 +33,8 @@ Windows portable dosyası sistemdeki WebView2 çalışma zamanını kullanır. m
 
 ## Veriler ve çalışma biçimi
 
+Release başlığı, indirme bağlantıları ve paket boyutları CI tarafından oluşturulur. Sürüme özel yenilikler için tag oluşturmadan önce `.github/release-notes/v<version>.md` eklenebilir; GitHub'ın otomatik changelog'u açıklamanın sonuna eklenir.
+
 - Ayarlar ve hesap önbelleği: `~/.codex/switcher_config.dat`, `~/.codex/switcher_accounts.dat` (AES-256-GCM).
 - Etkin oturum: `~/.codex/auth.json`. Hesap değişmeden önce `~/.codex/backups/` altına zaman damgalı yedek alınır.
 - Eski Windows `.dat` dosyaları aynı kullanıcı profili ve bilgisayarda Tauri uygulaması tarafından okunur. Şifreleme anahtarı kullanıcıya ve bilgisayara bağlıdır; `.dat` dosyalarını başka bilgisayara kopyalamak geçiş yöntemi değildir.

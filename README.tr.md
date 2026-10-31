@@ -36,7 +36,7 @@ Windows portable dosyası sistemdeki WebView2 çalışma zamanını kullanır. m
 Release başlığı, indirme bağlantıları ve paket boyutları CI tarafından oluşturulur. Sürüme özel yenilikler için tag oluşturmadan önce `.github/release-notes/v<version>.md` eklenebilir; GitHub'ın otomatik changelog'u açıklamanın sonuna eklenir.
 
 - Ayarlar ve hesap önbelleği: `~/.codex/switcher_config.dat`, `~/.codex/switcher_accounts.dat` (AES-256-GCM).
-- Etkin oturum: `~/.codex/auth.json`. Hesap değişmeden önce `~/.codex/backups/` altına zaman damgalı yedek alınır.
+- Etkin oturum: `~/.codex/auth.json`. Hesap değişmeden önce `~/.codex/backups/` altına zaman damgalı yedek alınır. `auth.json` güncellenmeden önce çalışan ChatGPT masaüstü süreçleri kapatılır ve tamamen kapandığı doğrulanır; süreçler zaten kapalıysa veya kapanma sırasında sonlandıysa hesap geçişi hatalı durdurma uyarısı vermeden güvenle tamamlanır.
 - Eski Windows `.dat` dosyaları aynı kullanıcı profili ve bilgisayarda Tauri uygulaması tarafından okunur. Şifreleme anahtarı kullanıcıya ve bilgisayara bağlıdır; `.dat` dosyalarını başka bilgisayara kopyalamak geçiş yöntemi değildir.
 - OAuth tokenları Rust arka uçta kalır. Arayüze token içermeyen hesap ve kota bilgileri gönderilir. Eski sürümün tarayıcı depolamasındaki token içeren önbellek açılışta silinir.
 - Ayarlarda oturum açınca otomatik başlatma ve hesap değişiminden sonra masaüstü uygulamasını açma seçeneği vardır. İkinci seçenek kapalıysa yalnızca hesap dosyası güncellenir.

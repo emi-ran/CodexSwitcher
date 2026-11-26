@@ -1452,7 +1452,10 @@ mod tests {
         assert!(blocks_restart("codex.exe", &none));
         assert!(blocks_restart("Codex.exe", &none));
         assert!(blocks_restart("codex-app-server.exe", &none));
+        #[cfg(windows)]
         assert!(blocks_restart("ChatGPT.exe", &none));
+        #[cfg(not(windows))]
+        assert!(blocks_restart("ChatGPT", &none));
         assert!(!blocks_restart("codexswitcher.exe", &none));
         assert!(!blocks_restart("CodexSwitcher", &none));
         // The console command line is never a Codex or ChatGPT process.

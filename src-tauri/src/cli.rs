@@ -1,8 +1,11 @@
 // Codex CLI TUI session handling for account switching.
 //
-// Running `codex` TUI sessions keep the previous ChatGPT account in memory. Before a
-// switch we close them gracefully (Ctrl+C written into their console), and after the
-// switch we type `codex resume <id>` back into the same shell.
+// A running `codex` TUI keeps the previous ChatGPT account in memory only when it uses an
+// embedded server (`--no-daemon`, `--oss`, `-p`, `--search`, custom `-c` keys, ...). TUIs on
+// the managed app-server daemon reconnect by themselves after the daemon restarts, so they
+// are left open. Embedded sessions are closed gracefully (Ctrl+C written into their console)
+// and, after the switch, `codex resume <id>` is typed back into the same shell. TUIs started
+// with `--remote` talk to a remote server and are never touched.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -81,7 +84,10 @@ const NON_TUI_SUBCOMMANDS: &[&str] = &[
 const CTRL_C_PRESSES: usize = 6;
 const CTRL_C_GAP: Duration = Duration::from_millis(400);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
-const DAEMON_TIMEOUT: Duration = Duration::from_secs(15);
+// `daemon stop` drains running turns first (default 60 s, configurable up to 300 s), then
+// force-kills after 10 s. `start` is quick.
+const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(320);
+const DAEMON_START_TIMEOUT: Duration = Duration::from_secs(30);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -92,6 +98,10 @@ pub struct Invocation {
     pub session_id: Option<String>,
     pub flags: Vec<String>,
     pub dropped_flags: Vec<String>,
+    /// A flag in the invocation makes the TUI use its own embedded server.
+    pub forces_embedded: bool,
+    /// Started with `--remote`.
+    pub remote: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +124,8 @@ pub struct Session {
     pub session_id: Option<String>,
     pub flags: Vec<String>,
     pub dropped_flags: Vec<String>,
+    pub forces_embedded: bool,
+    pub remote: bool,
 }
 
 impl Session {
@@ -153,7 +165,11 @@ pub struct Prepared {
     closed: Vec<Closed>,
     failed: usize,
     skipped: usize,
+    restart: bool,
+    daemon_sessions: usize,
+    /// Set when a daemon stop was attempted; `finish_switch` then always tries `start`.
     daemon_exe: Option<PathBuf>,
+    daemon_stopped: bool,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -164,6 +180,8 @@ pub struct Report {
     pub failed: usize,
     pub skipped: usize,
     pub daemon_restarted: bool,
+    /// Daemon sessions that reconnect to the new account by themselves.
+    pub reconnecting: usize,
     /// Flags that could not be carried over, across the sessions that were relaunched.
     pub dropped_flags: usize,
 }
@@ -225,7 +243,120 @@ fn unquote_config(value: &str) -> String {
     value.to_string()
 }
 
+/// Flags that always run the TUI on an embedded server.
+const EMBEDDED_FLAGS: &[&str] = &[
+    "--no-daemon",
+    "--oss",
+    "-p",
+    "--profile",
+    "--search",
+    "--strict-config",
+    "--dangerously-bypass-hook-trust",
+];
+/// `-c` keys that keep a TUI on the daemon. `features.*` additionally needs a true/false value.
+const DAEMON_CONFIG_KEYS: &[&str] = &[
+    "tui.fullscreen_transcript",
+    "suppress_unstable_features_warning",
+];
+
+/// Whether one `-c`/`--config` value makes the TUI use an embedded server.
+fn config_forces_embedded(value: &str) -> bool {
+    let unquoted = unquote_config(value);
+    let (key, val) = unquoted.split_once('=').unwrap_or((unquoted.as_str(), ""));
+    if key.starts_with("features.") {
+        !matches!(val, "true" | "false")
+    } else {
+        !DAEMON_CONFIG_KEYS.contains(&key)
+    }
+}
+
+/// Scans every flag before `--`, including values that are later dropped as unsafe.
+/// Returns `(forces_embedded, remote)`.
+fn scan_triggers(args: &[String]) -> (bool, bool) {
+    let (mut forces_embedded, mut remote) = (false, false);
+    let mut i = 0;
+    while i < args.len() {
+        let arg = args[i].as_str();
+        i += 1;
+        if arg == "--" {
+            break;
+        }
+        if !arg.starts_with('-') || arg.len() < 2 {
+            continue;
+        }
+        let (name, inline) = match arg.split_once('=') {
+            Some((n, v)) => (n, Some(v)),
+            None => (arg, None),
+        };
+        forces_embedded |= EMBEDDED_FLAGS.contains(&name);
+        remote |= name == "--remote";
+        if VALUE_FLAGS.contains(&name) {
+            let value = match inline {
+                Some(v) => Some(v.to_string()),
+                None => {
+                    let next = args.get(i).cloned();
+                    i += 1;
+                    next
+                }
+            };
+            if matches!(name, "-c" | "--config") {
+                forces_embedded |= value.as_deref().is_some_and(config_forces_embedded);
+            }
+        }
+    }
+    (forces_embedded, remote)
+}
+
+/// Removes repeated flags from a preserved flag list. For `-c`/`--config` only the last value
+/// of each key is kept (a wrapper re-injects them on every launch). Other repeated value flags
+/// and boolean flags keep their first occurrence. The order of the rest is preserved.
+fn dedupe_flags(flags: &[String]) -> Vec<String> {
+    let mut items: Vec<(&str, Option<&str>)> = Vec::new();
+    let mut i = 0;
+    while i < flags.len() {
+        let name = flags[i].as_str();
+        if VALUE_FLAGS.contains(&name) && i + 1 < flags.len() {
+            items.push((name, Some(flags[i + 1].as_str())));
+            i += 2;
+        } else {
+            items.push((name, None));
+            i += 1;
+        }
+    }
+    let is_config = |n: &str| matches!(n, "-c" | "--config");
+    let config_key = |v: &str| v.split_once('=').map_or(v, |(k, _)| k).to_string();
+    let mut out = Vec::new();
+    for (idx, &(name, value)) in items.iter().enumerate() {
+        let repeated = if is_config(name) {
+            let key = config_key(value.unwrap_or(""));
+            items[idx + 1..]
+                .iter()
+                .any(|&(n, v)| is_config(n) && config_key(v.unwrap_or("")) == key)
+        } else {
+            items[..idx].iter().any(|&(n, v)| n == name && v == value)
+        };
+        if repeated {
+            continue;
+        }
+        out.push(name.to_string());
+        if let Some(v) = value {
+            out.push(v.to_string());
+        }
+    }
+    out
+}
+
+/// Parses the invocation and adds the classification flags and the flag de-duplication.
 pub fn parse_invocation(args: &[String]) -> Invocation {
+    let mut inv = parse_tokens(args);
+    let (forces_embedded, remote) = scan_triggers(args);
+    inv.forces_embedded = forces_embedded;
+    inv.remote = remote;
+    inv.flags = dedupe_flags(&inv.flags);
+    inv
+}
+
+fn parse_tokens(args: &[String]) -> Invocation {
     let mut inv = Invocation {
         is_tui: true,
         ..Default::default()
@@ -525,6 +656,8 @@ pub fn plan_sessions(processes: &[ProcInfo]) -> Vec<Session> {
             session_id: inv.session_id,
             flags,
             dropped_flags,
+            forces_embedded: inv.forces_embedded,
+            remote: inv.remote,
         });
     }
     out
@@ -570,13 +703,73 @@ fn managed_daemon(procs: &[ProcInfo]) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// The daemon keeps the old account for new sessions, so it is stopped on a switch when
-/// sessions are restarted, or when no detected session uses it (nothing to break).
-fn daemon_should_stop(restart: bool, sessions: &[Session]) -> bool {
-    restart
-        || sessions
-            .iter()
-            .all(|s| s.flags.iter().any(|f| f == "--no-daemon"))
+/// How a running TUI is attached. It decides whether a switch may touch the session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Attach {
+    /// Uses the managed daemon: reconnects by itself after a daemon restart.
+    Daemon,
+    /// Has its own server: keeps the old account until it is relaunched.
+    Embedded,
+    /// Talks to a remote server: never touched.
+    Remote,
+}
+
+fn attach_mode(s: &Session, daemon_running: bool) -> Attach {
+    if s.remote {
+        Attach::Remote
+    } else if daemon_running && !s.forces_embedded {
+        Attach::Daemon
+    } else {
+        Attach::Embedded
+    }
+}
+
+/// What a switch does with the planned sessions.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SessionPlan {
+    /// Indices of embedded sessions to close and resume (restart only).
+    close: Vec<usize>,
+    /// Non-remote sessions that are not closed: not restartable, or restart is off.
+    skipped: usize,
+    /// Daemon sessions. They are never closed.
+    daemon: usize,
+}
+
+fn plan_switch(sessions: &[Session], daemon_running: bool, restart: bool) -> SessionPlan {
+    let mut plan = SessionPlan::default();
+    for (i, s) in sessions.iter().enumerate() {
+        match attach_mode(s, daemon_running) {
+            Attach::Remote => {}
+            Attach::Daemon => {
+                plan.daemon += 1;
+                if !restart {
+                    plan.skipped += 1;
+                }
+            }
+            Attach::Embedded if restart && s.restartable() => plan.close.push(i),
+            Attach::Embedded => plan.skipped += 1,
+        }
+    }
+    plan
+}
+
+/// The daemon keeps the old account for new sessions. It is stopped on a switch when sessions
+/// are restarted, or when no daemon session would break.
+fn daemon_should_stop(restart: bool, daemon_sessions: usize) -> bool {
+    restart || daemon_sessions == 0
+}
+
+/// `(reconnecting, extra failed)` for the daemon part of a switch. Daemon sessions count as
+/// reconnected only when the daemon restart fully succeeded. If they were meant to be restarted
+/// and that failed, they count as failed.
+fn daemon_outcome(restart: bool, daemon_sessions: usize, daemon_restarted: bool) -> (usize, usize) {
+    if daemon_restarted {
+        (daemon_sessions, 0)
+    } else if restart {
+        (0, daemon_sessions)
+    } else {
+        (0, 0)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -623,7 +816,11 @@ fn is_alive(pid: u32) -> bool {
 
 pub fn status() -> Value {
     let procs = snapshot();
-    let sessions = plan_sessions(&procs);
+    // Remote TUIs are not local sessions: a switch never touches them, so they are not counted.
+    let sessions: Vec<Session> = plan_sessions(&procs)
+        .into_iter()
+        .filter(|s| !s.remote)
+        .collect();
     json!({
         "running": sessions.len(),
         "restartable": sessions.iter().filter(|s| s.restartable()).count(),
@@ -632,16 +829,25 @@ pub fn status() -> Value {
     })
 }
 
-/// Closes restartable sessions (only when `restart` is true and supported) and stops the
-/// managed daemon when needed. Never kills a process: a session that does not exit is failed.
+/// Closes embedded restartable sessions (only when `restart` is true and supported) and stops
+/// the managed daemon when needed. Daemon and remote sessions are never closed. Never kills a
+/// process: a session that does not exit is failed.
 pub fn prepare_switch(restart: bool) -> Prepared {
     let procs = snapshot();
     let sessions = plan_sessions(&procs);
     let restart = restart && cfg!(windows);
-    let mut prepared = Prepared::default();
+    let daemon = managed_daemon(&procs);
+    let plan = plan_switch(&sessions, daemon.is_some(), restart);
+    let mut prepared = Prepared {
+        skipped: plan.skipped,
+        restart,
+        daemon_sessions: plan.daemon,
+        ..Default::default()
+    };
 
     if restart {
-        let closings = close_sessions(&sessions, &mut prepared);
+        let to_close: Vec<&Session> = plan.close.iter().map(|&i| &sessions[i]).collect();
+        let closings = close_sessions(&to_close, &mut prepared);
         // Rollouts are read only after every session has exited, since they are flushed on exit.
         if let Some(min_start) = closings.iter().map(|c| c.session.start_time).min() {
             let rollouts = read_rollouts(min_start);
@@ -654,17 +860,16 @@ pub fn prepare_switch(restart: bool) -> Prepared {
                 });
             }
         }
-    } else {
-        prepared.skipped = sessions.len();
     }
 
-    if daemon_should_stop(restart, &sessions) {
-        prepared.daemon_exe = managed_daemon(&procs).filter(|exe| run_daemon(exe, "stop"));
+    if let Some(exe) = daemon.filter(|_| daemon_should_stop(restart, plan.daemon)) {
+        prepared.daemon_stopped = run_daemon(&exe, "stop", DAEMON_STOP_TIMEOUT);
+        prepared.daemon_exe = Some(exe);
     }
     prepared
 }
 
-/// Restarts the daemon if it was stopped, then types the resume command into each closed
+/// Restarts the daemon if a stop was attempted, then types the resume command into each closed
 /// session's shell. Safe to call on the error path.
 pub fn finish_switch(prepared: Prepared) -> Report {
     let mut report = Report {
@@ -674,8 +879,14 @@ pub fn finish_switch(prepared: Prepared) -> Report {
         ..Default::default()
     };
     if let Some(exe) = &prepared.daemon_exe {
-        report.daemon_restarted = run_daemon(exe, "start");
+        // `start` is tried even when the stop failed, so the daemon is not left down.
+        let started = run_daemon(exe, "start", DAEMON_START_TIMEOUT);
+        report.daemon_restarted = prepared.daemon_stopped && started;
     }
+    let (reconnecting, daemon_failed) =
+        daemon_outcome(prepared.restart, prepared.daemon_sessions, report.daemon_restarted);
+    report.reconnecting = reconnecting;
+    report.failed += daemon_failed;
     for closed in &prepared.closed {
         thread::sleep(Duration::from_millis(500));
         match type_command(closed.shell_pid, &closed.command) {
@@ -689,7 +900,7 @@ pub fn finish_switch(prepared: Prepared) -> Report {
     report
 }
 
-fn run_daemon(exe: &Path, action: &str) -> bool {
+fn run_daemon(exe: &Path, action: &str, timeout: Duration) -> bool {
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["app-server", "daemon", action])
         .stdin(Stdio::null())
@@ -703,7 +914,7 @@ fn run_daemon(exe: &Path, action: &str) -> bool {
     let Ok(mut child) = cmd.spawn() else {
         return false;
     };
-    let deadline = Instant::now() + DAEMON_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return status.success(),
@@ -713,9 +924,9 @@ fn run_daemon(exe: &Path, action: &str) -> bool {
     }
 }
 
-fn close_sessions(sessions: &[Session], prepared: &mut Prepared) -> Vec<Closing> {
+fn close_sessions(sessions: &[&Session], prepared: &mut Prepared) -> Vec<Closing> {
     let mut closings = Vec::new();
-    for s in sessions {
+    for &s in sessions {
         let Some(shell) = s.shell_pid else {
             prepared.skipped += 1;
             continue;
@@ -1064,6 +1275,8 @@ mod tests {
             session_id: session_id.map(str::to_string),
             flags: vec![],
             dropped_flags: vec![],
+            forces_embedded: false,
+            remote: false,
         }
     }
 
@@ -1157,6 +1370,7 @@ mod tests {
             "-c",
             "a=\"x y\"",
         ]));
+        // The repeated `model=gpt` collapses to its last occurrence.
         assert_eq!(
             inv.flags,
             args(&[
@@ -1164,11 +1378,162 @@ mod tests {
                 "shell_environment_policy.set.ORCA_TERMINAL_HANDLE=term_x",
                 "-c",
                 "model=gpt",
-                "-c",
-                "model=gpt",
             ])
         );
         assert_eq!(inv.dropped_flags, args(&["-c"]));
+    }
+
+    #[test]
+    fn repeated_flags_are_collapsed() {
+        let inv = parse_invocation(&args(&[
+            "-c",
+            "shell_environment_policy.set.ORCA_TERMINAL_HANDLE=term_a",
+            "-c",
+            "model=gpt",
+            "-c",
+            "shell_environment_policy.set.ORCA_TERMINAL_HANDLE=term_b",
+            "--yolo",
+            "--yolo",
+            "--add-dir",
+            "C:\\a",
+            "--add-dir",
+            "C:\\a",
+            "--add-dir",
+            "C:\\b",
+            "--enable",
+            "x",
+            "--enable",
+            "x",
+        ]));
+        assert_eq!(
+            inv.flags,
+            args(&[
+                "-c",
+                "model=gpt",
+                "-c",
+                "shell_environment_policy.set.ORCA_TERMINAL_HANDLE=term_b",
+                "--yolo",
+                "--add-dir",
+                "C:\\a",
+                "--add-dir",
+                "C:\\b",
+                "--enable",
+                "x",
+            ])
+        );
+    }
+
+    #[test]
+    fn embedded_triggers_force_embedded() {
+        let cases: &[&[&str]] = &[
+            &["--no-daemon"],
+            &["--oss"],
+            &["-p", "work"],
+            &["--profile=work"],
+            &["--search"],
+            &["--strict-config"],
+            &["--dangerously-bypass-hook-trust"],
+            &["-c", "model=gpt"],
+            &["--config=model=gpt"],
+            &["-c", "shell_environment_policy.set.X=1"],
+            &["-c", "features.x=yes"],
+            &["-c", "features.x"],
+            &["-c", "'model=gpt'"],
+            // Unsafe value: dropped from the flags, but still an embedded trigger.
+            &["-c", "model=x y"],
+        ];
+        for case in cases {
+            let inv = parse_invocation(&args(case));
+            assert!(inv.forces_embedded, "{case:?}");
+        }
+    }
+
+    #[test]
+    fn daemon_compatible_flags_do_not_force_embedded() {
+        let cases: &[&[&str]] = &[
+            &[],
+            &["-c", "features.multi_agent=true"],
+            &["--config=features.x=false"],
+            &["-c", "tui.fullscreen_transcript=true"],
+            &["-c", "suppress_unstable_features_warning=1"],
+            &["--enable", "x", "--disable", "y"],
+            &["--yolo", "-m", "gpt-5"],
+        ];
+        for case in cases {
+            let inv = parse_invocation(&args(case));
+            assert!(!inv.forces_embedded, "{case:?}");
+        }
+    }
+
+    #[test]
+    fn remote_flag_is_detected() {
+        assert!(parse_invocation(&args(&["--remote", "ws://host:4500"])).remote);
+        assert!(parse_invocation(&args(&["--remote=ws://host:4500"])).remote);
+        let auth = parse_invocation(&args(&["--remote-auth-token-env", "TOKEN"]));
+        assert!(!auth.remote);
+        assert!(!auth.forces_embedded);
+    }
+
+    #[test]
+    fn attach_mode_depends_on_daemon_and_flags() {
+        let plain = session(1, None, None);
+        let mut forced = plain.clone();
+        forced.forces_embedded = true;
+        let mut remote = plain.clone();
+        remote.remote = true;
+        assert_eq!(attach_mode(&plain, true), Attach::Daemon);
+        assert_eq!(attach_mode(&plain, false), Attach::Embedded);
+        assert_eq!(attach_mode(&forced, true), Attach::Embedded);
+        assert_eq!(attach_mode(&remote, true), Attach::Remote);
+        assert_eq!(attach_mode(&remote, false), Attach::Remote);
+    }
+
+    #[test]
+    fn switch_plan_by_restart_setting() {
+        let daemon = session(1, None, None);
+        let mut embedded = session(2, None, None);
+        embedded.forces_embedded = true;
+        let mut no_shell = embedded.clone();
+        no_shell.shell_pid = None;
+        let mut remote = session(4, None, None);
+        remote.remote = true;
+        let sessions = [daemon, embedded, no_shell, remote];
+
+        // Restart on: only the restartable embedded session is closed; the daemon one is kept.
+        assert_eq!(
+            plan_switch(&sessions, true, true),
+            SessionPlan {
+                close: vec![1],
+                skipped: 1,
+                daemon: 1,
+            }
+        );
+        // Restart off: nothing is closed; every non-remote session is skipped.
+        assert_eq!(
+            plan_switch(&sessions, true, false),
+            SessionPlan {
+                close: vec![],
+                skipped: 3,
+                daemon: 1,
+            }
+        );
+        // No managed daemon: every session is embedded.
+        assert_eq!(
+            plan_switch(&sessions, false, true),
+            SessionPlan {
+                close: vec![0, 1],
+                skipped: 1,
+                daemon: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn daemon_outcome_reports_reconnects_and_failures() {
+        assert_eq!(daemon_outcome(true, 2, true), (2, 0));
+        assert_eq!(daemon_outcome(true, 2, false), (0, 2));
+        assert_eq!(daemon_outcome(false, 2, false), (0, 0));
+        assert_eq!(daemon_outcome(true, 0, false), (0, 0));
     }
 
     #[test]
@@ -1471,13 +1836,10 @@ mod tests {
 
     #[test]
     fn daemon_stop_policy() {
-        let plain = session(1, None, None);
-        let mut no_daemon = session(1, None, None);
-        no_daemon.flags = args(&["--no-daemon"]);
-        assert!(daemon_should_stop(true, std::slice::from_ref(&plain)));
-        assert!(!daemon_should_stop(false, std::slice::from_ref(&plain)));
-        assert!(daemon_should_stop(false, std::slice::from_ref(&no_daemon)));
-        assert!(daemon_should_stop(false, &[]));
+        assert!(daemon_should_stop(true, 0));
+        assert!(daemon_should_stop(true, 2));
+        assert!(!daemon_should_stop(false, 1));
+        assert!(daemon_should_stop(false, 0));
     }
 
     #[test]
@@ -1542,10 +1904,12 @@ mod tests {
             failed: 1,
             skipped: 0,
             daemon_restarted: true,
+            reconnecting: 3,
             dropped_flags: 3,
         };
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["daemonRestarted"], json!(true));
+        assert_eq!(v["reconnecting"], json!(3));
         assert_eq!(v["droppedFlags"], json!(3));
     }
 

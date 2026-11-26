@@ -320,12 +320,16 @@ async function handleSwitch(account) {
   if (appState.isSwitching) return;
   appState.isSwitching = true;
   const cliRunningBefore = appState.cliStatus?.running || 0;
+  // The daemon restart waits for running Codex responses, so the wait is shown up front.
+  const cliWaiting = Boolean(appState.cliStatus?.daemonRunning) && cliRunningBefore > 0 &&
+    appState.routerConfig.restartCliAfterSwitch !== false && Boolean(appState.cliStatus?.restartSupported);
 
   openSwitchModal(account);
   log(t('switchingLog', account.email || account.name));
 
   try {
     updateSwitchStep(1, 'active', t('step1Closing'));
+    if (cliWaiting) appendSwitchStep(9, 'active', t('cliStepWaiting'));
 
     const res = await apiFetch('/api/switch', {
       method: 'POST',
@@ -355,6 +359,10 @@ async function handleSwitch(account) {
       appendSwitchStep(4, 'pending', message);
     } else if (cliSkipped > 0) {
       appendSwitchStep(7, 'pending', t('cliStepSkipped', cliSkipped));
+    }
+    const cliReconnected = cli.reconnecting || 0;
+    if (cliReconnected > 0) {
+      appendSwitchStep(8, 'done', t('cliStepReconnected', cliReconnected));
     }
     if (cliRestarted > 0) {
       appendSwitchStep(5, 'done', t('cliStepRestarted', cliRestarted));
@@ -393,6 +401,7 @@ async function handleSwitch(account) {
     log('Switch error: ' + err.message);
     switchModalActions.style.display = 'flex';
   } finally {
+    document.getElementById('step9')?.remove();
     appState.isSwitching = false;
   }
 }

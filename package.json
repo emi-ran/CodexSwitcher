@@ -1,6 +1,6 @@
 {
   "name": "codexswitcher",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Cross-platform account switcher and quota monitor for OpenAI Codex & ChatGPT Desktop",
   "scripts": {
     "start": "tauri dev",

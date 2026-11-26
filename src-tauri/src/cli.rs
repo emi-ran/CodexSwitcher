@@ -829,6 +829,47 @@ pub fn status() -> Value {
     })
 }
 
+/// Daemon state and embedded session count, for a plain command-line switch. Remote sessions
+/// are not counted.
+pub struct SwitchCensus {
+    pub daemon_running: bool,
+    pub embedded_sessions: usize,
+}
+
+pub fn switch_census() -> SwitchCensus {
+    let procs = snapshot();
+    let daemon_running = managed_daemon(&procs).is_some();
+    let embedded_sessions = plan_sessions(&procs)
+        .iter()
+        .filter(|s| !s.remote && attach_mode(s, daemon_running) == Attach::Embedded)
+        .count();
+    SwitchCensus {
+        daemon_running,
+        embedded_sessions,
+    }
+}
+
+/// A managed daemon that was asked to stop and must be started again.
+pub struct StoppedDaemon {
+    exe: PathBuf,
+    stopped: bool,
+}
+
+/// Stops the managed app-server daemon when one runs. Daemon-connected sessions reconnect by
+/// themselves after it starts again. Returns None when no daemon is running.
+pub fn daemon_stop() -> Option<StoppedDaemon> {
+    let exe = managed_daemon(&snapshot())?;
+    let stopped = run_daemon(&exe, "stop", DAEMON_STOP_TIMEOUT);
+    Some(StoppedDaemon { exe, stopped })
+}
+
+/// Starts the daemon again. Always attempted after a stop, even when the stop failed.
+/// Returns `(stopped, started)`.
+pub fn daemon_start(daemon: StoppedDaemon) -> (bool, bool) {
+    let started = run_daemon(&daemon.exe, "start", DAEMON_START_TIMEOUT);
+    (daemon.stopped, started)
+}
+
 /// Closes embedded restartable sessions (only when `restart` is true and supported) and stops
 /// the managed daemon when needed. Daemon and remote sessions are never closed. Never kills a
 /// process: a session that does not exit is failed.
@@ -1832,6 +1873,19 @@ mod tests {
             &HashMap::from([(40, &chatgpt)])
         ));
         assert_eq!(plan_sessions(&[chatgpt, codex]).len(), 1);
+    }
+
+    #[test]
+    fn command_line_binary_is_not_a_codex_or_chatgpt_process() {
+        let cli = proc(60, None, "codexswitcher-cli.exe", &["codexswitcher-cli.exe", "list"], None);
+        assert_eq!(exe_stem(&cli.name), "codexswitcher-cli");
+        // Alone, the command line is not a TUI session.
+        let alone = proc(59, None, "codexswitcher-cli.exe", &["codexswitcher-cli.exe"], None);
+        assert!(plan_sessions(&[alone]).is_empty());
+        // A Codex process started from it is still a session: the command line is no ChatGPT ancestor.
+        let codex = proc(61, Some(60), "codex.exe", &["codex.exe"], None);
+        assert!(!has_chatgpt_ancestor(&codex, &HashMap::from([(60, &cli)])));
+        assert_eq!(plan_sessions(&[cli, codex]).len(), 1);
     }
 
     #[test]

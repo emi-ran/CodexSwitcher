@@ -4,6 +4,32 @@
 
 Codex Switcher syncs Codex accounts from 9Router, shows usage limits, and switches the active `~/.codex/auth.json` account. The new desktop app uses Tauri v2 with a Rust backend and the existing HTML/CSS/JavaScript interface. It targets Windows, Linux, and macOS.
 
+## Command line
+
+The command line for scripts and AI agents is `codexswitcher-cli`, installed next to the app. `codexswitcher.exe` is the app: double-click it. The portable download has the command line as a separate file, `CodexSwitcher-<version>-cli-x64.exe`. Run `codexswitcher-cli help` for the full reference. Neither file is added to PATH; call it by its full path.
+
+```text
+codexswitcher-cli list [--plan <plan>] [--refresh] [--json]
+codexswitcher-cli current [--json]
+codexswitcher-cli switch <selector> [--no-daemon-restart | --restart] [--json]
+```
+
+- `list` first syncs from the saved 9Router connection, like the app's sync button, then shows accounts with plan, expiry, remaining 5-hour and weekly usage, reset times and fetch time. `--plan` applies after the sync. `--refresh` is still accepted and has no effect.
+- `current` syncs the same way, then shows the cached account that matches `auth.json`.
+- `switch` does not sync; it uses the cached accounts.
+- When the sync or an account's usage fetch fails, the last good values are shown instead. Such rows have `"stale": true` in JSON and show "saved <time> (<age>)" in text; `fetchedAt` is when they were fetched (null if unknown). A warning names the account, or says the sync did not complete. Warnings come first in text output, and JSON has `"refreshed"` and `"warnings"`. Accounts without earlier values show no numbers, only the error.
+- `switch` accepts a connection id, an email (case-insensitive) or a ChatGPT account id. The selector must match exactly one account.
+  - Default: writes `auth.json` and restarts the Codex app-server daemon if it runs, so daemon-connected Codex sessions reconnect with the new account. The ChatGPT desktop app is not stopped or started. Embedded sessions (for example `--no-daemon`) and remote sessions are not touched and keep the old account; the output counts them.
+  - Inside a Codex process the daemon restart is scheduled in a detached helper after the command returns, because a synchronous stop would wait for the running turn.
+  - `--no-daemon-restart` only writes `auth.json`.
+  - `--restart` runs the app's full restart: it closes the desktop app and embedded CLI sessions and resumes them. It is refused when run inside a Codex or ChatGPT process.
+
+Notes:
+
+- Settings and the 9Router password cannot be read or changed from the command line, and no token, API key or router URL is printed.
+- The saved settings file is only protected against casual reading. Another program running as the same user can still read it.
+- Exit codes: 0 success (also with saved values after a failed sync), 1 the operation failed (for example a failed sync with no saved accounts), 2 bad usage. With `--json` stdout holds one JSON object (`{"ok":true,...}` or `{"ok":false,"error":"..."}`).
+- `codexswitcher-cli` is a console program: the shell waits for it, output appears in order, and `$LASTEXITCODE` holds the exit code. No Enter press or `| Out-String` is needed.
 ## Development
 
 Install [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform, Node.js 20+, and Rust. On Linux, Tauri needs WebKitGTK 4.1 and appindicator development packages.
@@ -61,6 +87,7 @@ The interface can be closed to the tray. Use the tray menu's **Quit** action to 
 | --- | --- |
 | `src-tauri/` | Tauri configuration, Rust IPC, encrypted storage, auth switch, process handling |
 | `src-tauri/src/cli.rs` | Codex CLI session detection, graceful close, and resume after an account switch |
+| `src-tauri/src/bin/codexswitcher-cli.rs` | Console command line (`codexswitcher-cli`) that calls the same command code as the app |
 | `public/` | Web interface and Tauri IPC bridge |
 | `src-tauri/windows/` | Windows installer customization |
 

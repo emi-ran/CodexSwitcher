@@ -1,5 +1,6 @@
 mod auth;
 mod cli;
+mod command;
 mod config;
 mod desktop;
 mod router;
@@ -177,6 +178,11 @@ async fn sync_accounts(
     state: tauri::State<'_, AppState>,
     password: Option<String>,
 ) -> Result<Value, String> {
+    sync_accounts_core(&state, password).await
+}
+
+/// Sync used by the GUI button and by `codexswitcher-cli list`.
+async fn sync_accounts_core(state: &AppState, password: Option<String>) -> Result<Value, String> {
     let settings = config::load()?;
     let url = settings["routerUrl"]
         .as_str()
@@ -198,12 +204,14 @@ async fn sync_accounts(
     let mut accounts = router::extract_accounts(&database);
     let active = auth::current()?;
     router::mark_active(&mut accounts, active.as_ref());
+    // Saved accounts before this sync: a failed usage fetch keeps their last good values.
+    let previous_accounts = state.accounts.lock().map_err(|e| e.to_string())?.clone();
     for account in &mut accounts {
-        match usage::fetch(&state.client, account).await {
-            Ok(Some(data)) => account["usage"] = data,
-            Ok(None) => {}
-            Err(error) => account["usage"] = json!({"error": error}),
-        }
+        let previous = previous_accounts
+            .iter()
+            .find(|old| old["id"] == account["id"]);
+        let result = usage::fetch(&state.client, account).await;
+        usage::apply_fetch_result(account, previous, result);
     }
     persist_accounts(&accounts)?;
     *state.accounts.lock().map_err(|e| e.to_string())? = accounts.clone();
@@ -220,7 +228,24 @@ async fn switch_account(app: tauri::AppHandle, account_id: String) -> Result<Val
     on_worker(move || switch_account_blocking(&app.state::<AppState>(), account_id)).await
 }
 
+/// How a switch treats the desktop app and CLI sessions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SwitchMode {
+    /// GUI: stop the desktop app, handle CLI sessions and relaunch as the saved settings say.
+    Gui,
+    /// Command line: writes auth.json only, unless `restart` is set (same flow as the GUI).
+    Cli { restart: bool },
+}
+
 fn switch_account_blocking(state: &AppState, account_id: String) -> Result<Value, String> {
+    switch_account_core(state, &account_id, SwitchMode::Gui)
+}
+
+fn switch_account_core(
+    state: &AppState,
+    account_id: &str,
+    mode: SwitchMode,
+) -> Result<Value, String> {
     let mut accounts = state.accounts.lock().map_err(|e| e.to_string())?;
     let account = accounts
         .iter()
@@ -234,7 +259,9 @@ fn switch_account_blocking(state: &AppState, account_id: String) -> Result<Value
         return Err("Selected account has no usable OAuth credentials".into());
     }
     let settings = config::load()?;
-    let was_running = desktop::status()["running"].as_bool().unwrap_or(false);
+    // A plain command-line switch never inspects, stops or starts the desktop app.
+    let plain = mode == SwitchMode::Cli { restart: false };
+    let was_running = !plain && desktop::status()["running"].as_bool().unwrap_or(false);
     let mut steps = Vec::new();
     if was_running {
         desktop::stop()?;
@@ -242,14 +269,32 @@ fn switch_account_blocking(state: &AppState, account_id: String) -> Result<Value
     }
     // Close CLI sessions only after the desktop step succeeded. The CLI must be stopped
     // before auth.json changes, and finish_switch always runs, even if the write fails.
-    let prepared = cli::prepare_switch(settings["restartCliAfterSwitch"] == true);
+    let prepared = match mode {
+        SwitchMode::Gui => Some(cli::prepare_switch(
+            settings["restartCliAfterSwitch"] == true,
+        )),
+        SwitchMode::Cli { restart: true } => Some(cli::prepare_switch(true)),
+        SwitchMode::Cli { restart: false } => None,
+    };
     let backup = auth::write_account(&account);
-    let cli_report = cli::finish_switch(prepared);
-    let cli_json = serde_json::to_value(&cli_report).unwrap_or(Value::Null);
+    let cli_json = match prepared {
+        Some(prepared) => {
+            let cli_report = cli::finish_switch(prepared);
+            serde_json::to_value(&cli_report).unwrap_or(Value::Null)
+        }
+        None => Value::Null,
+    };
     let backup = backup?;
     steps.push("auth.json backed up and updated");
+    let launch = match mode {
+        SwitchMode::Gui => settings["launchDesktopAfterSwitch"] == true,
+        SwitchMode::Cli { restart: true } => {
+            was_running && settings["launchDesktopAfterSwitch"] == true
+        }
+        SwitchMode::Cli { restart: false } => false,
+    };
     let mut launched = false;
-    if settings["launchDesktopAfterSwitch"] == true {
+    if launch {
         match desktop::start() {
             Ok(_) => {
                 launched = true;
@@ -317,16 +362,29 @@ fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
     get_autostart(app)
 }
 
-pub fn run() {
-    let client = reqwest::Client::builder()
+/// Runs a command-line request and returns its exit code, or None when the GUI should start.
+pub fn command_exit_code(args: &[String]) -> Option<i32> {
+    command::dispatch(args)
+}
+
+/// Runs the console command line (`codexswitcher-cli`) and returns its exit code. Never starts the GUI.
+pub fn cli_exit_code(args: &[String]) -> i32 {
+    command::run_cli(args)
+}
+
+fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .expect("HTTP client could not be created");
+        .expect("HTTP client could not be created")
+}
+
+pub fn run() {
     let accounts = saved_accounts().unwrap_or_default();
     tauri::Builder::default()
         .manage(AppState {
             accounts: Mutex::new(accounts),
-            client,
+            client: http_client(),
         })
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {

@@ -60,6 +60,7 @@ jobs:
           $version = node -p "require('./package.json').version"
           New-Item -ItemType Directory -Path release-assets -Force | Out-Null
           Copy-Item -LiteralPath src-tauri/target/release/codexswitcher.exe -Destination "release-assets/CodexSwitcher-$version-portable-x64.exe"
+          Copy-Item -LiteralPath src-tauri/target/release/codexswitcher-cli.exe -Destination "release-assets/CodexSwitcher-$version-cli-x64.exe"
           $nsis = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*.exe' -File | Select-Object -First 1
           $msi = Get-ChildItem src-tauri/target/release/bundle/msi -Filter '*.msi' -File | Select-Object -First 1
           if (-not $nsis -or -not $msi) { throw 'Windows installer artifact missing' }

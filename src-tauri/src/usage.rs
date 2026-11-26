@@ -91,7 +91,8 @@ pub async fn fetch(client: &reqwest::Client, account: &mut Value) -> Result<Opti
         "primary": window(&rate["primary_window"], 18000),
         "secondary": window(&rate["secondary_window"], 604800),
         "limitReached": rate["limit_reached"].as_bool().unwrap_or(false),
-        "resetCredits": data["rate_limit_reset_credits"]["available_count"].as_u64().unwrap_or(0)
+        "resetCredits": data["rate_limit_reset_credits"]["available_count"].as_u64().unwrap_or(0),
+        "fetchedAt": chrono::Utc::now().to_rfc3339()
     })))
 }
 
@@ -110,9 +111,137 @@ fn apply_live_plan(account: &mut Value, data: &Value) {
     account["plan"] = Value::String(plan);
 }
 
+/// The last successful usage stored for an account: its own usage when that has no error,
+/// otherwise the `lastGood` copy kept beside the error. None when there never was one.
+pub fn last_good(usage: &Value) -> Option<&Value> {
+    let object = usage.as_object()?;
+    if object.contains_key("error") {
+        object.get("lastGood").filter(|good| good.is_object())
+    } else if object.is_empty() {
+        None
+    } else {
+        Some(usage)
+    }
+}
+
+/// Applies one usage fetch made during a sync to the freshly synced account. A failed fetch
+/// stores the error and keeps the previous successful usage as `lastGood`, and it keeps the
+/// previous plan and expiry: the synced values come from the login-time token and can be wrong.
+pub fn apply_fetch_result(
+    account: &mut Value,
+    previous: Option<&Value>,
+    result: Result<Option<Value>, String>,
+) {
+    let error = match result {
+        Ok(None) => return,
+        Ok(Some(data)) => match data.get("error").and_then(Value::as_str) {
+            None => {
+                account["usage"] = data;
+                return;
+            }
+            Some(error) => error.to_owned(),
+        },
+        Err(error) => error,
+    };
+    let mut usage = json!({ "error": error });
+    if let Some(good) = previous.and_then(|old| last_good(&old["usage"])) {
+        usage["lastGood"] = good.clone();
+    }
+    account["usage"] = usage;
+    if let Some(old) = previous {
+        for field in ["plan", "expiresAt"] {
+            if let Some(value) = old.get(field) {
+                account[field] = value.clone();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn good_usage() -> Value {
+        json!({
+            "primary": {"usedPercent": 20.0, "resetAt": 1795000000},
+            "secondary": {"usedPercent": 55.0, "resetAt": 1795600000},
+            "fetchedAt": "2026-11-25T08:00:00+00:00"
+        })
+    }
+
+    fn stored(plan: &str, usage: Value) -> Value {
+        json!({"id": "acc_1", "plan": plan, "expiresAt": "2026-12-01T00:00:00Z", "usage": usage})
+    }
+
+    #[test]
+    fn failed_fetch_keeps_last_good_values_and_previous_plan() {
+        let previous = stored("plus", good_usage());
+        let mut account = json!({"id": "acc_1", "plan": "free", "expiresAt": null, "usage": null});
+        apply_fetch_result(&mut account, Some(&previous), Err("Status 500".into()));
+        assert_eq!(account["usage"]["error"], "Status 500");
+        assert_eq!(account["usage"]["lastGood"], good_usage());
+        assert_eq!(account["plan"], "plus");
+        assert_eq!(account["expiresAt"], "2026-12-01T00:00:00Z");
+    }
+
+    #[test]
+    fn error_result_is_a_failure_like_an_err() {
+        let previous = stored("plus", good_usage());
+        let mut account = json!({"id": "acc_1", "plan": "plus", "usage": null});
+        apply_fetch_result(
+            &mut account,
+            Some(&previous),
+            Ok(Some(json!({"error": "Status 401"}))),
+        );
+        assert_eq!(account["usage"]["error"], "Status 401");
+        assert_eq!(account["usage"]["lastGood"], good_usage());
+    }
+
+    #[test]
+    fn repeated_failures_keep_one_level_of_last_good() {
+        let first = json!({"error": "Status 500", "lastGood": good_usage()});
+        let previous = stored("plus", first);
+        let mut account = json!({"id": "acc_1", "plan": "plus", "usage": null});
+        apply_fetch_result(&mut account, Some(&previous), Err("Status 503".into()));
+        assert_eq!(account["usage"]["error"], "Status 503");
+        assert_eq!(account["usage"]["lastGood"], good_usage());
+        assert!(account["usage"]["lastGood"]["lastGood"].is_null());
+    }
+
+    #[test]
+    fn failure_without_previous_values_has_only_the_error() {
+        let mut account = json!({"id": "acc_1", "plan": "plus", "usage": null});
+        apply_fetch_result(&mut account, None, Err("Could not fetch usage".into()));
+        assert_eq!(account["usage"], json!({"error": "Could not fetch usage"}));
+        assert_eq!(account["plan"], "plus");
+    }
+
+    #[test]
+    fn successful_fetch_replaces_usage_and_keeps_the_synced_plan() {
+        let previous = stored("plus", good_usage());
+        let mut account = json!({"id": "acc_1", "plan": "pro", "usage": null});
+        apply_fetch_result(&mut account, Some(&previous), Ok(Some(good_usage())));
+        assert_eq!(account["usage"], good_usage());
+        assert_eq!(account["plan"], "pro");
+    }
+
+    #[test]
+    fn no_usage_result_changes_nothing() {
+        let previous = stored("plus", good_usage());
+        let mut account = json!({"id": "acc_1", "plan": "pro", "usage": null});
+        apply_fetch_result(&mut account, Some(&previous), Ok(None));
+        assert_eq!(account, json!({"id": "acc_1", "plan": "pro", "usage": null}));
+    }
+
+    #[test]
+    fn last_good_reads_plain_usage_and_lastgood() {
+        assert_eq!(last_good(&good_usage()), Some(&good_usage()));
+        let with_error = json!({"error": "x", "lastGood": good_usage()});
+        assert_eq!(last_good(&with_error), Some(&good_usage()));
+        assert_eq!(last_good(&json!({"error": "x"})), None);
+        assert_eq!(last_good(&json!({})), None);
+        assert_eq!(last_good(&Value::Null), None);
+    }
 
     #[test]
     fn live_free_plan_overrides_stored_plus_and_clears_expiry() {

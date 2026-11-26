@@ -4,6 +4,32 @@
 
 Codex Switcher, 9Router üzerindeki Codex hesaplarını eşitler, kullanım limitlerini gösterir ve etkin `~/.codex/auth.json` hesabını değiştirir. Yeni masaüstü uygulaması mevcut HTML/CSS/JavaScript arayüzüyle Tauri v2 ve Rust arka uç kullanır. Windows, Linux ve macOS hedeflenir.
 
+## Komut satırı
+
+Betikler ve yapay zekâ ajanları için komut satırı `codexswitcher-cli`dir ve uygulamanın yanına kurulur. `codexswitcher.exe` uygulamadır: çift tıklayarak açın. Taşınabilir indirmede komut satırı ayrı bir dosya olarak bulunur: `CodexSwitcher-<sürüm>-cli-x64.exe`. Tam başvuru için `codexswitcher-cli help` çalıştırın. İki dosya da PATH'e eklenmez; tam yoluyla çağırın.
+
+```text
+codexswitcher-cli list [--plan <plan>] [--refresh] [--json]
+codexswitcher-cli current [--json]
+codexswitcher-cli switch <selector> [--no-daemon-restart | --restart] [--json]
+```
+
+- `list` önce kayıtlı 9Router bağlantısından eşitler (uygulamadaki eşitleme düğmesi gibi), sonra hesapları plan, son kullanma tarihi, kalan 5 saatlik ve haftalık kullanım, sıfırlanma zamanları ve alınma zamanıyla gösterir. `--plan` süzgeci eşitlemeden sonra uygulanır. `--refresh` hâlâ kabul edilir ve etkisi yoktur.
+- `current` aynı şekilde eşitler, ardından `auth.json` ile eşleşen önbellekteki hesabı gösterir.
+- `switch` eşitlemez; önbellekteki hesapları kullanır.
+- Eşitleme veya bir hesabın kullanım alımı başarısız olursa, son başarılı değerler gösterilir. Bu satırlar JSON'da `"stale": true` taşır, metin çıktısında "kayıtlı <zaman> (<yaş>)" gösterir; `fetchedAt` değerlerin alındığı zamandır (bilinmiyorsa null). Uyarı hesabı adıyla anar veya eşitlemenin tamamlanamadığını söyler. Metin çıktısında uyarılar en üstte yer alır; JSON'da `"refreshed"` ve `"warnings"` bulunur. Daha önce değeri olmayan hesaplarda sayı yoktur, yalnızca hata gösterilir.
+- `switch`, bağlantı kimliği, e-posta (büyük/küçük harf duyarsız) veya ChatGPT hesap kimliğini kabul eder. Seçici tam olarak bir hesapla eşleşmelidir.
+  - Varsayılan: `auth.json` dosyasını yazar ve çalışıyorsa Codex app-server daemon'unu yeniden başlatır; böylece daemon'a bağlı Codex oturumları yeni hesapla yeniden bağlanır. ChatGPT masaüstü uygulaması durdurulmaz veya başlatılmaz. Gömülü oturumlar (örneğin `--no-daemon`) ve uzak oturumlar değiştirilmez ve eski hesapta kalır; çıktı bunların sayısını verir.
+  - Bir Codex süreci içinden çalıştırıldığında daemon yeniden başlatması, komut bittikten sonra ayrık bir yardımcı süreçle planlanır; çünkü eşzamanlı durdurma, çalışan turun bitmesini bekler.
+  - `--no-daemon-restart` yalnızca `auth.json` dosyasını yazar.
+  - `--restart`, uygulamanın tam yeniden başlatmasını çalıştırır: masaüstü uygulamasını ve gömülü CLI oturumlarını kapatıp sürdürür. Bir Codex veya ChatGPT süreci içinden çalıştırılırsa reddedilir.
+
+Notlar:
+
+- Ayarlara ve 9Router parolasına komut satırından erişilemez; hiçbir token, API anahtarı veya yönlendirici adresi yazdırılmaz.
+- Kayıtlı ayar dosyası yalnızca gözle okumaya karşı korunur. Aynı kullanıcı altında çalışan başka bir program bu dosyayı yine okuyabilir.
+- Çıkış kodları: 0 başarı (eşitleme başarısız olsa da kayıtlı değerler varsa), 1 işlem başarısız (örneğin kayıtlı hesap yokken eşitleme başarısızsa), 2 hatalı kullanım. `--json` ile standart çıktıda tek bir JSON nesnesi çıkar (`{"ok":true,...}` veya `{"ok":false,"error":"..."}`).
+- `codexswitcher-cli` bir konsol programıdır: kabuk onu bekler, çıktı sırayla görünür ve `$LASTEXITCODE` çıkış kodunu tutar. Enter'a basmak veya `| Out-String` kullanmak gerekmez.
 ## Geliştirme
 
 İşletim sisteminize uygun [Tauri v2 gereksinimlerini](https://v2.tauri.app/start/prerequisites/), Node.js 20+ ve Rust kurun. Linux'ta WebKitGTK 4.1 ve appindicator geliştirme paketleri gerekir.
@@ -61,6 +87,7 @@ Pencere kapatıldığında uygulama sistem tepsisinde kalır. Tam çıkış içi
 | --- | --- |
 | `src-tauri/` | Tauri ayarları, Rust IPC, şifreli depolama, hesap ve süreç yönetimi |
 | `src-tauri/src/cli.rs` | Codex CLI oturum algılama, nazikçe kapatma ve hesap değişiminden sonra devam ettirme |
+| `src-tauri/src/bin/codexswitcher-cli.rs` | Konsol komut satırı (`codexswitcher-cli`); uygulamayla aynı komut kodunu çağırır |
 | `public/` | Arayüz ve Tauri IPC köprüsü |
 | `src-tauri/windows/` | Windows kurulum özelleştirmeleri |
 

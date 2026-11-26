@@ -26,6 +26,7 @@ const packages = [
   [/portable.*\.exe$/, 'Windows x64', 'Portable EXE'],
   [/setup.*\.exe$/, 'Windows x64', 'Installer EXE'],
   [/\.msi$/, 'Windows x64', 'MSI'],
+  [/cli.*\.exe$/, 'Windows x64', 'Command line EXE'],
   [/\.deb$/, 'Linux x64', 'DEB'],
   [/\.AppImage$/, 'Linux x64', 'AppImage'],
   [/macos-arm64\.dmg$/, 'macOS Apple Silicon', 'DMG'],

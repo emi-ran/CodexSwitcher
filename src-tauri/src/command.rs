@@ -1130,14 +1130,12 @@ fn spawn_detached(exe: &std::path::Path, arg: &str) -> Result<(), String> {
 // Console handles
 // ---------------------------------------------------------------------------
 
+#[cfg(windows)]
 mod sinks {
     use super::Output;
+    use std::ffi::c_void;
     use std::io::Write;
 
-    #[cfg(windows)]
-    use std::ffi::c_void;
-
-    #[cfg(windows)]
     #[derive(Clone, Copy)]
     enum Sink {
         /// A pipe or file handle owned by the caller. Written to as is, never closed.
@@ -1146,13 +1144,11 @@ mod sinks {
         Console,
     }
 
-    #[cfg(windows)]
     pub struct Sinks {
         stdout: Sink,
         stderr: Sink,
     }
 
-    #[cfg(windows)]
     impl Sinks {
         pub fn capture() -> Self {
             use windows::Win32::System::Console::{STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
@@ -1168,7 +1164,6 @@ mod sinks {
         }
     }
 
-    #[cfg(windows)]
     fn classify(id: windows::Win32::System::Console::STD_HANDLE) -> Sink {
         use windows::Win32::Foundation::{HANDLE_FLAG_INHERIT, HANDLE_FLAGS};
         use windows::Win32::Storage::FileSystem::{GetFileType, FILE_TYPE_CHAR, FILE_TYPE_UNKNOWN};
@@ -1198,7 +1193,6 @@ mod sinks {
         Sink::Redirected(handle.0 as usize)
     }
 
-    #[cfg(windows)]
     fn write_sink(sink: Sink, bytes: &[u8]) {
         use std::os::windows::io::FromRawHandle;
         if bytes.is_empty() {

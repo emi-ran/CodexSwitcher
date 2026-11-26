@@ -1,4 +1,5 @@
 mod auth;
+mod cli;
 mod config;
 mod desktop;
 mod router;
@@ -106,6 +107,14 @@ fn public_active(active: Option<&Value>, accounts: &[Value]) -> Option<Value> {
     router::active_public(active).map(|mut info| {
         if let Some(account) = accounts.iter().find(|account| account["isActive"] == true) {
             info["usage"] = account["usage"].clone();
+            // The active auth.json claims are stale; trust live plan data only when it succeeded.
+            let live = account["usage"]
+                .as_object()
+                .is_some_and(|usage| !usage.contains_key("error"));
+            if live {
+                info["plan"] = account["plan"].clone();
+                info["expiresAt"] = account["expiresAt"].clone();
+            }
         }
         info
     })
@@ -154,9 +163,10 @@ fn status_response(state: &AppState) -> Result<Value, String> {
     let public_accounts = router::public_accounts(&accounts);
     Ok(json!({
         "success": true,
-        "routerConfig": {"url": settings["routerUrl"], "hasPassword": settings["hasPassword"], "launchDesktopAfterSwitch": settings["launchDesktopAfterSwitch"]},
+        "routerConfig": {"url": settings["routerUrl"], "hasPassword": settings["hasPassword"], "launchDesktopAfterSwitch": settings["launchDesktopAfterSwitch"], "restartCliAfterSwitch": settings["restartCliAfterSwitch"]},
         "activeAccount": active_public,
         "codexStatus": desktop::status(),
+        "cliStatus": cli::status(),
         "cachedAccountsCount": public_accounts.len(),
         "accounts": public_accounts
     }))
@@ -223,15 +233,21 @@ fn switch_account_blocking(state: &AppState, account_id: String) -> Result<Value
     {
         return Err("Selected account has no usable OAuth credentials".into());
     }
+    let settings = config::load()?;
     let was_running = desktop::status()["running"].as_bool().unwrap_or(false);
     let mut steps = Vec::new();
     if was_running {
         desktop::stop()?;
         steps.push("ChatGPT desktop app closed");
     }
-    let backup = auth::write_account(&account)?;
+    // Close CLI sessions only after the desktop step succeeded. The CLI must be stopped
+    // before auth.json changes, and finish_switch always runs, even if the write fails.
+    let prepared = cli::prepare_switch(settings["restartCliAfterSwitch"] == true);
+    let backup = auth::write_account(&account);
+    let cli_report = cli::finish_switch(prepared);
+    let cli_json = serde_json::to_value(&cli_report).unwrap_or(Value::Null);
+    let backup = backup?;
     steps.push("auth.json backed up and updated");
-    let settings = config::load()?;
     let mut launched = false;
     if settings["launchDesktopAfterSwitch"] == true {
         match desktop::start() {
@@ -247,7 +263,7 @@ fn switch_account_blocking(state: &AppState, account_id: String) -> Result<Value
     let cache_warning = persist_accounts(&accounts).err();
     Ok(json!({
         "success": true,
-        "switchResult": {"success": true, "wasRunning": was_running, "steps": steps, "backupPath": backup, "launched": launched, "cacheWarning": cache_warning},
+        "switchResult": {"success": true, "wasRunning": was_running, "steps": steps, "backupPath": backup, "launched": launched, "cacheWarning": cache_warning, "cli": cli_json},
         "activeAccount": public_active(active.as_ref(), &accounts),
         "accounts": router::public_accounts(&accounts)
     }))
@@ -268,13 +284,20 @@ fn save_settings(
     router_url: String,
     password: String,
     launch_desktop_after_switch: bool,
+    restart_cli_after_switch: bool,
 ) -> Result<Value, String> {
-    let saved = config::save(router_url, password, launch_desktop_after_switch)?;
+    let saved = config::save(
+        router_url,
+        password,
+        launch_desktop_after_switch,
+        restart_cli_after_switch,
+    )?;
     Ok(json!({
         "routerConfig": {
             "url": saved["routerUrl"],
             "hasPassword": saved["password"].as_str().is_some_and(|value| !value.trim().is_empty()),
-            "launchDesktopAfterSwitch": saved["launchDesktopAfterSwitch"]
+            "launchDesktopAfterSwitch": saved["launchDesktopAfterSwitch"],
+            "restartCliAfterSwitch": saved["restartCliAfterSwitch"]
         }
     }))
 }

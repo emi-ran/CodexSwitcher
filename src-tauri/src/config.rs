@@ -28,15 +28,22 @@ pub fn load() -> Result<Value, String> {
         .or_else(|| std::env::var("ROUTER_PASSWORD").ok())
         .unwrap_or_default();
     let launch_desktop = stored["launchDesktopAfterSwitch"].as_bool().unwrap_or(true);
+    let restart_cli = stored["restartCliAfterSwitch"].as_bool().unwrap_or(true);
     Ok(json!({
         "routerUrl": router_url,
         "password": password,
         "launchDesktopAfterSwitch": launch_desktop,
+        "restartCliAfterSwitch": restart_cli,
         "hasPassword": !password.trim().is_empty()
     }))
 }
 
-pub fn save(router_url: String, password: String, launch_desktop: bool) -> Result<Value, String> {
+pub fn save(
+    router_url: String,
+    password: String,
+    launch_desktop: bool,
+    restart_cli: bool,
+) -> Result<Value, String> {
     let url = router_url.trim().trim_end_matches('/');
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("Router URL must begin with https:// or http://".into());
@@ -50,6 +57,7 @@ pub fn save(router_url: String, password: String, launch_desktop: bool) -> Resul
         "routerUrl": url,
         "password": password,
         "launchDesktopAfterSwitch": launch_desktop,
+        "restartCliAfterSwitch": restart_cli,
         "updatedAt": Utc::now().to_rfc3339()
     });
     vault::write(&config_path()?, &value)?;

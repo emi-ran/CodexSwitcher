@@ -74,6 +74,7 @@ pub async fn fetch(client: &reqwest::Client, account: &mut Value) -> Result<Opti
         .json()
         .await
         .map_err(|_| "Invalid usage response")?;
+    apply_live_plan(account, &data);
     let rate = &data["rate_limit"];
     fn window(value: &Value, default_limit: u64) -> Value {
         if !value.is_object() {
@@ -92,4 +93,54 @@ pub async fn fetch(client: &reqwest::Client, account: &mut Value) -> Result<Opti
         "limitReached": rate["limit_reached"].as_bool().unwrap_or(false),
         "resetCredits": data["rate_limit_reset_credits"]["available_count"].as_u64().unwrap_or(0)
     })))
+}
+
+/// The plan in the stored id_token is frozen at login time, so the live usage
+/// response is authoritative. A changed or free plan means the stored expiry
+/// belongs to an old subscription and is cleared.
+fn apply_live_plan(account: &mut Value, data: &Value) {
+    let Some(plan) = data["plan_type"].as_str().filter(|value| !value.is_empty()) else {
+        return;
+    };
+    let plan = plan.to_lowercase();
+    let previous = account["plan"].as_str().map(str::to_owned);
+    if previous.as_deref() != Some(plan.as_str()) || plan == "free" {
+        account["expiresAt"] = Value::Null;
+    }
+    account["plan"] = Value::String(plan);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_free_plan_overrides_stored_plus_and_clears_expiry() {
+        let mut account = json!({"plan": "plus", "expiresAt": "2026-12-01T00:00:00Z"});
+        apply_live_plan(&mut account, &json!({"plan_type": "Free"}));
+        assert_eq!(account["plan"], "free");
+        assert_eq!(account["expiresAt"], Value::Null);
+    }
+
+    #[test]
+    fn same_live_plan_keeps_expiry() {
+        let mut account = json!({"plan": "plus", "expiresAt": "2026-12-01T00:00:00Z"});
+        apply_live_plan(&mut account, &json!({"plan_type": "plus"}));
+        assert_eq!(account["plan"], "plus");
+        assert_eq!(account["expiresAt"], "2026-12-01T00:00:00Z");
+    }
+
+    #[test]
+    fn missing_or_empty_live_plan_changes_nothing() {
+        let original = json!({"plan": "plus", "expiresAt": "2026-12-01T00:00:00Z"});
+        for data in [
+            json!({}),
+            json!({"plan_type": ""}),
+            json!({"plan_type": null}),
+        ] {
+            let mut account = original.clone();
+            apply_live_plan(&mut account, &data);
+            assert_eq!(account, original);
+        }
+    }
 }

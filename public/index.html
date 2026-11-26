@@ -36,6 +36,12 @@
           </button>
         </div>
 
+        <!-- Codex CLI sessions status (no action) -->
+        <div class="status-indicator-pill" id="cliStatusPill" style="display: none;">
+          <span class="indicator-dot running" id="cliDot"></span>
+          <span id="cliStatusText">CLI: 0</span>
+        </div>
+
         <button class="btn btn-default" id="syncBtn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
@@ -67,7 +73,7 @@
               <span class="active-dot"></span>
               <span id="activeTagText" data-i18n="currentActiveAccount">AKTİF HESAP</span>
             </div>
-            <span class="plan-tag" id="spotlightPlanBadge">PLUS</span>
+            <span class="plan-tag" id="spotlightPlanBadge">—</span>
           </div>
 
           <div class="active-details">
@@ -232,6 +238,14 @@
             <span class="checkbox-text" data-i18n="launchDesktopLabel">Hesap değişiminden sonra ChatGPT'yi aç</span>
           </label>
           <span class="field-help" data-i18n="launchDesktopHelp">Kapalıysa yalnızca auth.json güncellenir</span>
+        </div>
+
+        <div class="form-row form-row-checkbox">
+          <label class="checkbox-container" id="labelRestartCli">
+            <input type="checkbox" id="settingsRestartCli">
+            <span class="checkbox-text" data-i18n="restartCliLabel">Hesap değişiminden sonra açık Codex CLI oturumlarını yeniden başlat</span>
+          </label>
+          <span class="field-help" data-i18n="restartCliHelp">Aynı terminalde codex resume ile devam eder. Süren yanıt kesilir ve gönderilmemiş metin kaybolur. Yalnızca Windows.</span>
         </div>
 
         <div class="modal-foot modal-foot-form">

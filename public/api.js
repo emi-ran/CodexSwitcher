@@ -18,7 +18,8 @@ async function apiFetch(path, options = {}) {
         data = await invoke('save_settings', {
           routerUrl: body.routerUrl,
           password: body.password,
-          launchDesktopAfterSwitch: body.launchDesktopAfterSwitch
+          launchDesktopAfterSwitch: body.launchDesktopAfterSwitch,
+          restartCliAfterSwitch: body.restartCliAfterSwitch
         });
         data.success = true;
         break;

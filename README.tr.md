@@ -42,6 +42,12 @@ Release başlığı, indirme bağlantıları ve paket boyutları CI tarafından 
 - Ayarlarda oturum açınca otomatik başlatma ve hesap değişiminden sonra masaüstü uygulamasını açma seçeneği vardır. İkinci seçenek kapalıysa yalnızca hesap dosyası güncellenir.
 - Ayarları kaydederken şifre alanı boş bırakılırsa kayıtlı şifre korunur.
 - İki kotası da kullanılabilir hesaplar, kalan 5 saatlik ve haftalık yüzdelerinin küçüğü yüksek olacak şekilde sıralanır. Eşitlikte sırasıyla 5 saatlik pay, haftalık pay, sıfırlama hakları ve aktif hesap tercih edilir. Kota bilgisi eksik hesaplar kullanılabilir hesaplardan sonra; kotası biten ve kota sorgusu hatalı hesaplar en sonda gösterilir. Sıfırlama hakkı, bitmiş kotayı kullanılabilir saymaz. İlk kullanılabilir sonuç **En iyi seçim** olarak işaretlenir.
+- Plan rozetleri, kullanım isteği başarılı olduğunda canlı yanıttaki (`plan_type`) planı kullanır ve giriş tokenındaki kayıtlı planın yerine geçer. Plan değiştiğinde veya ücretsiz olduğunda kayıtlı son kullanma tarihi temizlenir. Plan bilinmiyorsa Plus yerine **Bilinmiyor** gösterilir.
+- Çalışan Codex CLI oturumları algılanır ve üst bilgide **CLI: n** olarak gösterilir; bu gösterge yalnızca n sıfırdan büyükse görünür.
+- **Hesap değişiminden sonra açık Codex CLI oturumlarını yeniden başlat** seçeneği açıksa (varsayılan; yalnızca Windows) algılanan her oturum Ctrl+C ile kapatılır, asla zorla sonlandırılmaz ve aynı terminalde özgün seçenekleriyle `codex resume <session-id>` komutuyla yeniden açılır. Oturum kimliği belirlenemezse `codex resume` seçici ekranı açılır.
+- Yönetilen Codex app-server daemon'ı, yeniden başlatma açıksa veya algılanan hiçbir oturum onu kullanmıyorsa (oturum yoksa ya da tüm oturumlar `--no-daemon` ile başlatılmışsa) `auth.json` değişmeden önce durdurulur. Durdurulduysa geçişten sonra yeniden başlatılır.
+- CLI yeniden başlatma sınırlamaları: Yönetici olarak çalışan terminallere ulaşılamayabilir (denenmedi); VS Code eklentisinin kendi app-server süreci yeniden başlatılmaz; güvenle yeniden yazılamayan seçenekler atlanır. Başarısız ve atlanan oturumlar geçiş penceresinde listelenir; aktarılamayan seçenekler bildirim olarak gösterilir.
+- Aynı terminalde kapatma ve devam ettirme, Windows'ta codex-cli 0.172.0 ile tek hesapta bir kez doğrulandı. Farklı bir hesapta devam ettirme henüz doğrulanmadı.
 - `ROUTER_URL` ve `ROUTER_PASSWORD`, yalnızca ilgili ayar kaydedilmemişse yedek değer olarak kullanılır. Kayıtlı ayarlar önceliklidir.
 - NSIS kurulumunda masaüstü kısayolu seçilebilir ve Windows oturumunda otomatik başlatma sorulur. MSI kurulumunda masaüstü kısayolu ve otomatik başlatma özellikleri seçilebilir. İkisi de Windows Uygulamalar listesinde görünür. Etkileşimli kaldırmada `.codex` verileri varsayılan olarak korunur; istenirse yalnızca Switcher ayar ve hesap önbelleği dosyaları silinir. `auth.json` ve yedekleri silinmez. Sessiz MSI kaldırması `.codex` verilerini korur.
 - Windows portable `.exe` dosyasının kurulum veya kaldırma sihirbazı yoktur. Linux ya da macOS uygulaması kaldırıldığında `~/.codex` içindeki Switcher dosyaları kalır; gerekirse bu dosyaları `auth.json` ve yedeklere dokunmadan elle silin.
@@ -54,6 +60,7 @@ Pencere kapatıldığında uygulama sistem tepsisinde kalır. Tam çıkış içi
 | Yol | Görev |
 | --- | --- |
 | `src-tauri/` | Tauri ayarları, Rust IPC, şifreli depolama, hesap ve süreç yönetimi |
+| `src-tauri/src/cli.rs` | Codex CLI oturum algılama, nazikçe kapatma ve hesap değişiminden sonra devam ettirme |
 | `public/` | Arayüz ve Tauri IPC köprüsü |
 | `src-tauri/windows/` | Windows kurulum özelleştirmeleri |
 

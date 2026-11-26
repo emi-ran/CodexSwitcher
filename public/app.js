@@ -6,6 +6,7 @@
 let appState = {
   activeAccount: null,
   codexStatus: { running: false, processes: [] },
+  cliStatus: { running: 0, restartSupported: false },
   routerConfig: { url: '', hasPassword: false },
   accounts: [],
   isSyncing: false,
@@ -26,6 +27,9 @@ const processDot = document.getElementById('processDot');
 const processText = document.getElementById('processText');
 const toggleCodexProcessBtn = document.getElementById('toggleCodexProcessBtn');
 const processActionIcon = document.getElementById('processActionIcon');
+const cliStatusPill = document.getElementById('cliStatusPill');
+const cliStatusText = document.getElementById('cliStatusText');
+const cliDot = document.getElementById('cliDot');
 
 const spotlightEmail = document.getElementById('spotlightEmail');
 const spotlightPlanBadge = document.getElementById('spotlightPlanBadge');
@@ -48,6 +52,7 @@ const settingsRouterUrl = document.getElementById('settingsRouterUrl');
 const settingsPassword = document.getElementById('settingsPassword');
 const settingsAutoStart = document.getElementById('settingsAutoStart');
 const settingsLaunchDesktop = document.getElementById('settingsLaunchDesktop');
+const settingsRestartCli = document.getElementById('settingsRestartCli');
 const togglePasswordBtn = document.getElementById('togglePasswordBtn');
 const closeSettingsModalBtn = document.getElementById('closeSettingsModalBtn');
 
@@ -209,6 +214,7 @@ async function loadStatus() {
       appState.routerConfig = data.routerConfig;
       appState.activeAccount = data.activeAccount;
       appState.codexStatus = data.codexStatus;
+      appState.cliStatus = data.cliStatus || appState.cliStatus;
 
       // Immediately render cached accounts from server if available
       if (Array.isArray(data.accounts) && data.accounts.length > 0) {
@@ -218,6 +224,7 @@ async function loadStatus() {
 
       updateSpotlightUI();
       updateCodexProcessUI();
+      updateCliStatusUI();
       updateRouterStatusUI(!!appState.routerConfig.url);
     }
   } catch (err) {
@@ -235,11 +242,13 @@ async function pollProcessStatus() {
     const data = await res.json();
     if (data.success) {
       appState.codexStatus = data.codexStatus;
+      appState.cliStatus = data.cliStatus || appState.cliStatus;
       if (data.activeAccount) {
         appState.activeAccount = data.activeAccount;
         updateSpotlightUI();
       }
       updateCodexProcessUI();
+      updateCliStatusUI();
     }
   } catch (e) {
     // Silent fail on polling
@@ -310,6 +319,7 @@ async function triggerSync(explicitPassword = null) {
 async function handleSwitch(account) {
   if (appState.isSwitching) return;
   appState.isSwitching = true;
+  const cliRunningBefore = appState.cliStatus?.running || 0;
 
   openSwitchModal(account);
   log(t('switchingLog', account.email || account.name));
@@ -334,6 +344,31 @@ async function handleSwitch(account) {
     updateSwitchStep(2, 'done', t('step2Done'));
     updateSwitchStep(3, 'done', appState.routerConfig.launchDesktopAfterSwitch === false ? t('step3Skipped') : (data.switchResult?.launched === false ? t('step3Manual') : t('step3Done')));
 
+    const cli = data.switchResult?.cli || {};
+    const cliRestarted = cli.restarted || 0;
+    const cliFailed = cli.failed || 0;
+    const cliSkipped = cli.skipped || 0;
+    const cliAutoOff = appState.routerConfig.restartCliAfterSwitch === false || !appState.cliStatus?.restartSupported;
+    // With the setting off the backend reports running sessions as skipped, so one manual-restart message covers both.
+    if (cliRunningBefore > 0 && cliAutoOff) {
+      const message = t('cliStepManual', cliRunningBefore);
+      appendSwitchStep(4, 'pending', message);
+    } else if (cliSkipped > 0) {
+      appendSwitchStep(7, 'pending', t('cliStepSkipped', cliSkipped));
+    }
+    if (cliRestarted > 0) {
+      appendSwitchStep(5, 'done', t('cliStepRestarted', cliRestarted));
+    }
+    if (cliFailed > 0) {
+      appendSwitchStep(6, 'error', t('cliStepFailed', cliFailed));
+    }
+    const cliDropped = cli.droppedFlags || 0;
+    if (cliDropped > 0) {
+      const message = t('cliDroppedFlags', cliDropped);
+      log(message);
+      showToast(message, 'info');
+    }
+
     appState.activeAccount = data.activeAccount;
     appState.accounts = data.accounts || [];
 
@@ -345,9 +380,12 @@ async function handleSwitch(account) {
 
     switchModalActions.style.display = 'flex';
 
-    setTimeout(() => {
-      switchModal.classList.remove('open');
-    }, 1800);
+    // Keep the modal open when a CLI session needs attention.
+    if (cliFailed === 0 && cliSkipped === 0) {
+      setTimeout(() => {
+        switchModal.classList.remove('open');
+      }, 1800);
+    }
 
   } catch (err) {
     updateSwitchStep(1, 'error', 'Error: ' + err.message);
@@ -405,6 +443,10 @@ async function handleStartCodex() {
 function openSettingsModal() {
   settingsRouterUrl.value = appState.routerConfig.url || '';
   if (settingsLaunchDesktop) settingsLaunchDesktop.checked = appState.routerConfig.launchDesktopAfterSwitch !== false;
+  if (settingsRestartCli) {
+    settingsRestartCli.checked = appState.routerConfig.restartCliAfterSwitch !== false;
+    settingsRestartCli.disabled = !appState.cliStatus?.restartSupported;
+  }
   settingsPassword.value = '';
 
   // Fetch current autostart setting
@@ -426,7 +468,7 @@ async function saveSettings() {
     const res = await apiFetch('/api/config', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ routerUrl: url, password, launchDesktopAfterSwitch: settingsLaunchDesktop?.checked ?? true })
+      body: JSON.stringify({ routerUrl: url, password, launchDesktopAfterSwitch: settingsLaunchDesktop?.checked ?? true, restartCliAfterSwitch: settingsRestartCli?.checked ?? true })
     });
     const data = await res.json();
 
@@ -480,7 +522,7 @@ function updateSpotlightUI() {
   }
 
   spotlightEmail.textContent = acc.email || 'ChatGPT Account';
-  spotlightPlanBadge.textContent = (acc.plan || 'PLUS').toUpperCase();
+  spotlightPlanBadge.textContent = (acc.plan && acc.plan !== 'unknown' ? acc.plan : t('planUnknown')).toUpperCase();
   spotlightAccountId.textContent = acc.accountId ? acc.accountId : 'N/A';
   spotlightAccountId.dataset.tooltip = acc.accountId || '';
   spotlightAccountId.tabIndex = acc.accountId ? 0 : -1;
@@ -544,6 +586,14 @@ function updateCodexProcessUI() {
   }
 }
 
+function updateCliStatusUI() {
+  if (!cliStatusPill) return;
+  const running = Number(appState.cliStatus?.running) || 0;
+  cliStatusPill.style.display = running > 0 ? '' : 'none';
+  cliStatusText.textContent = `CLI: ${running}`;
+  cliDot.style.display = running > 0 ? '' : 'none';
+}
+
 function updateRouterStatusUI(connected = true) {
   routerStatusText.textContent = appState.routerConfig.url ? '9Router' : t('routerNotConfigured');
   statusDot.className = `status-dot-mini ${connected ? '' : 'offline'}`;
@@ -569,8 +619,10 @@ function renderAccounts(accounts) {
     const row = document.createElement('div');
     row.className = `account-row ${acc.isActive ? 'is-active-row' : ''}`;
 
-    const plan = String(acc.plan || 'plus').toLowerCase();
-    const planClass = ['free', 'plus', 'pro', 'team', 'business', 'enterprise', 'edu'].includes(plan) ? plan : 'plus';
+    const plan = String(acc.plan || '').toLowerCase();
+    const knownPlans = ['free', 'plus', 'pro', 'team', 'business', 'enterprise', 'edu'];
+    const planClass = knownPlans.includes(plan) ? plan : 'unknown';
+    const planLabel = plan && plan !== 'unknown' ? plan : t('planUnknown');
     const idShort = acc.accountId ? String(acc.accountId).slice(0, 8) + '...' + String(acc.accountId).slice(-4) : '-';
 
     // Limits info HTML (Shows REMAINING / KALAN and RESET CREDITS)
@@ -638,7 +690,7 @@ function renderAccounts(accounts) {
         <div class="account-row-info">
           <div class="account-row-title-line">
             <span class="row-email" tabindex="0" data-tooltip="${escapeHtml(acc.email)}">${escapeHtml(acc.email)}</span>
-            <span class="row-plan-badge ${planClass}">${escapeHtml(plan)}</span>
+            <span class="row-plan-badge ${planClass}">${escapeHtml(planLabel)}</span>
             ${acc === bestAccount ? `<span class="best-choice-badge" tabindex="0" data-tooltip="${t('bestChoice')}" data-tooltip-detail="${escapeHtml(t('bestChoiceHelp'))}">${t('bestChoice')}</span>` : ''}
           </div>
           <div class="account-row-subline">
@@ -704,6 +756,18 @@ function openSwitchModal(account) {
   `;
 
   switchModal.classList.add('open');
+}
+
+function appendSwitchStep(stepNum, status, label) {
+  const stepEl = document.createElement('div');
+  stepEl.className = 'step-line pending';
+  stepEl.id = `step${stepNum}`;
+  stepEl.innerHTML = `
+    <div class="step-indicator"><span class="bullet"></span></div>
+    <div class="step-text"></div>
+  `;
+  switchStepsList.appendChild(stepEl);
+  updateSwitchStep(stepNum, status, label);
 }
 
 function updateSwitchStep(stepNum, status, label) {

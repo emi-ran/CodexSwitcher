@@ -140,7 +140,7 @@ pub fn extract_accounts(database: &Value) -> Vec<Value> {
             .and_then(|value| value["chatgpt_plan_type"].as_str())
             .map(str::to_owned)
             .or_else(|| first_str(&[&psd["chatgptPlanType"], &connection["plan"]]))
-            .unwrap_or_else(|| "plus".into());
+            .unwrap_or_else(|| "unknown".into());
         let id = connection["id"].as_str().unwrap_or_default().to_owned();
         let name = first_str(&[&connection["name"]]).unwrap_or_else(|| email.clone());
         accounts.push(json!({
@@ -164,25 +164,57 @@ fn first_str(values: &[&Value]) -> Option<String> {
     })
 }
 
+const PLACEHOLDER_EMAIL: &str = "No email associated";
+
+fn non_empty(value: &Value) -> Option<&str> {
+    value.as_str().filter(|text| !text.is_empty())
+}
+
+fn real_email(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|email| !email.is_empty() && !email.eq_ignore_ascii_case(PLACEHOLDER_EMAIL))
+        .map(str::to_ascii_lowercase)
+}
+
+/// Returns the match tier (1 = best) of `account` against the active auth, or None.
+///   1: non-empty refresh token is equal.
+///   2: accountId equal AND email equal (case-insensitive).
+///   3: partial match without contradiction: accountId equal where one side has
+///      no email, or email equal where one side has no accountId.
+fn match_tier(current: &Value, account: &Value) -> Option<u8> {
+    let current_token = non_empty(&current["tokens"]["refresh_token"]);
+    if current_token.is_some() && current_token == non_empty(&account["tokens"]["refresh_token"]) {
+        return Some(1);
+    }
+    let current_id = non_empty(&current["accountId"]);
+    let account_id = non_empty(&account["accountId"]);
+    let current_email = real_email(&current["email"]);
+    let account_email = real_email(&account["email"]);
+    let id_equal = current_id.is_some() && current_id == account_id;
+    let email_equal = current_email.is_some() && current_email == account_email;
+    if id_equal && email_equal {
+        return Some(2);
+    }
+    if id_equal && (current_email.is_none() || account_email.is_none()) {
+        return Some(3);
+    }
+    if email_equal && (current_id.is_none() || account_id.is_none()) {
+        return Some(3);
+    }
+    None
+}
+
+/// Marks only the accounts in the best (lowest) tier that has any match.
 pub fn mark_active(accounts: &mut [Value], active: Option<&Value>) {
-    for account in accounts {
-        let matched = active.is_some_and(|current| {
-            let id_match = current["accountId"]
-                .as_str()
-                .is_some_and(|id| account["accountId"] == id);
-            let email_match = current["email"].as_str().is_some_and(|email| {
-                account["email"]
-                    .as_str()
-                    .is_some_and(|value| value.eq_ignore_ascii_case(email))
-            });
-            let token_match = current["tokens"]["refresh_token"]
-                .as_str()
-                .is_some_and(|token| {
-                    !token.is_empty() && account["tokens"]["refresh_token"] == token
-                });
-            id_match || email_match || token_match
-        });
-        account["isActive"] = Value::Bool(matched);
+    let tiers: Vec<Option<u8>> = accounts
+        .iter()
+        .map(|account| active.and_then(|current| match_tier(current, account)))
+        .collect();
+    let best = tiers.iter().flatten().min().copied();
+    for (account, tier) in accounts.iter_mut().zip(tiers) {
+        account["isActive"] = Value::Bool(best.is_some() && tier == best);
     }
 }
 
@@ -221,5 +253,91 @@ mod tests {
         assert_eq!(public[0]["email"], "person@example.test");
         assert!(public[0].get("tokens").is_none());
         assert!(public[0].get("apiKey").is_none());
+    }
+
+    fn account(account_id: Value, email: Value, refresh_token: &str) -> Value {
+        json!({
+            "accountId": account_id,
+            "email": email,
+            "tokens": {"refresh_token": refresh_token},
+            "isActive": false
+        })
+    }
+
+    fn active_ids(accounts: &[Value]) -> Vec<bool> {
+        accounts
+            .iter()
+            .map(|account| account["isActive"] == true)
+            .collect()
+    }
+
+    #[test]
+    fn shared_account_id_with_different_emails_marks_only_same_email() {
+        let current = account(json!("acc-team"), json!("a@example.test"), "");
+        let mut accounts = vec![
+            account(json!("acc-team"), json!("a@example.test"), "rt-a"),
+            account(json!("acc-team"), json!("b@example.test"), "rt-b"),
+        ];
+        mark_active(&mut accounts, Some(&current));
+        assert_eq!(active_ids(&accounts), vec![true, false]);
+    }
+
+    #[test]
+    fn same_email_with_different_account_ids_marks_only_same_account_id() {
+        let current = account(json!("acc-1"), json!("same@example.test"), "");
+        let mut accounts = vec![
+            account(json!("acc-2"), json!("same@example.test"), "rt-2"),
+            account(json!("acc-1"), json!("SAME@example.test"), "rt-1"),
+        ];
+        mark_active(&mut accounts, Some(&current));
+        assert_eq!(active_ids(&accounts), vec![false, true]);
+    }
+
+    #[test]
+    fn token_match_wins_over_account_id_and_email_match() {
+        let current = account(json!("acc-1"), json!("a@example.test"), "rt-current");
+        let mut accounts = vec![
+            account(json!("acc-1"), json!("a@example.test"), "rt-other"),
+            account(json!("acc-9"), json!("b@example.test"), "rt-current"),
+        ];
+        mark_active(&mut accounts, Some(&current));
+        assert_eq!(active_ids(&accounts), vec![false, true]);
+    }
+
+    #[test]
+    fn partial_match_is_used_when_no_stronger_match_exists() {
+        // Current auth has an accountId but no email; the placeholder email on the
+        // account side is treated as missing, so the partial tier applies.
+        let current = account(json!("acc-1"), Value::Null, "");
+        let mut accounts = vec![
+            account(json!("acc-1"), json!("No email associated"), "rt-1"),
+            account(json!("acc-2"), json!("other@example.test"), "rt-2"),
+        ];
+        mark_active(&mut accounts, Some(&current));
+        assert_eq!(active_ids(&accounts), vec![true, false]);
+
+        // Current auth has an email but no accountId; the account matches on email.
+        let current = account(Value::Null, json!("a@example.test"), "");
+        let mut accounts = vec![
+            account(json!("acc-1"), json!("a@example.test"), "rt-1"),
+            account(json!("acc-2"), json!("b@example.test"), "rt-2"),
+        ];
+        mark_active(&mut accounts, Some(&current));
+        assert_eq!(active_ids(&accounts), vec![true, false]);
+    }
+
+    #[test]
+    fn no_active_account_clears_all_flags() {
+        let mut accounts = vec![
+            account(json!("acc-1"), json!("a@example.test"), "rt-1"),
+            account(json!("acc-2"), json!("b@example.test"), "rt-2"),
+        ];
+        accounts[0]["isActive"] = Value::Bool(true);
+        mark_active(&mut accounts, None);
+        assert_eq!(active_ids(&accounts), vec![false, false]);
+
+        let current = account(json!("acc-3"), json!("c@example.test"), "rt-3");
+        mark_active(&mut accounts, Some(&current));
+        assert_eq!(active_ids(&accounts), vec![false, false]);
     }
 }

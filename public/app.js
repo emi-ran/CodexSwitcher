@@ -13,6 +13,13 @@ let appState = {
   isSwitching: false
 };
 
+// Dialog and rendering state
+let rowsEntryPending = true;
+let lastSpotlightKey = null;
+let entryTimer = null;
+const quotaMemory = new Map();
+const dialogOpeners = new Map();
+
 // DOM Elements
 const statusDot = document.getElementById('statusDot');
 const routerStatusText = document.getElementById('routerStatusText');
@@ -62,6 +69,9 @@ const switchStepsList = document.getElementById('switchStepsList');
 const switchModalActions = document.getElementById('switchModalActions');
 const switchModalCloseBtn = document.getElementById('switchModalCloseBtn');
 const toastContainer = document.getElementById('toastContainer');
+const spotlightMain = document.getElementById('spotlightMain');
+const accountsColHead = document.getElementById('accountsColHead');
+const noResultsState = document.getElementById('noResultsState');
 
 function changeLanguage(lang) {
   window.hideAppTooltip?.();
@@ -149,7 +159,7 @@ function setupEventListeners() {
   emptyActionBtn.addEventListener('click', () => triggerSync());
 
   openSettingsBtn.addEventListener('click', () => openSettingsModal());
-  closeSettingsModalBtn.addEventListener('click', () => settingsModal.classList.remove('open'));
+  closeSettingsModalBtn.addEventListener('click', () => closeModal(settingsModal));
 
   settingsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -178,25 +188,28 @@ function setupEventListeners() {
     renderAccounts(filterAccounts(e.target.value));
   });
 
-  switchModalCloseBtn.addEventListener('click', () => {
-    switchModal.classList.remove('open');
-  });
+  switchModalCloseBtn.addEventListener('click', () => closeModal(switchModal));
 
-  // Close modals on backdrop click
+  // Backdrop click closes a dialog; the switch dialog stays open while a switch runs
   [settingsModal, switchModal].forEach((modal) => {
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.classList.remove('open');
-      }
+      if (e.target !== modal) return;
+      if (modal === switchModal && appState.isSwitching) return;
+      closeModal(modal);
     });
   });
 
-  // ESC key closes modals
+  // Tab is trapped inside the open dialog; Escape closes it (not the switch dialog while switching)
   document.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      trapDialogFocus(e);
+      return;
+    }
     if (e.key === 'Escape') {
-      settingsModal.classList.remove('open');
-      if (!appState.isSwitching) {
-        switchModal.classList.remove('open');
+      if (settingsModal.classList.contains('open')) {
+        closeModal(settingsModal);
+      } else if (!appState.isSwitching) {
+        closeModal(switchModal);
       }
     }
   });
@@ -246,6 +259,12 @@ async function pollProcessStatus() {
       if (data.activeAccount) {
         appState.activeAccount = data.activeAccount;
         updateSpotlightUI();
+      }
+      // The active account can change outside the app: refresh the list only when the active set differs.
+      if (Array.isArray(data.accounts) && data.accounts.length > 0 &&
+          activeSignature(data.accounts) !== activeSignature(appState.accounts)) {
+        appState.accounts = data.accounts;
+        renderAccounts(filterAccounts(searchInput.value));
       }
       updateCodexProcessUI();
       updateCliStatusUI();
@@ -298,6 +317,7 @@ async function triggerSync(explicitPassword = null) {
     appState.accounts = data.accounts || [];
     appState.activeAccount = data.activeAccount;
 
+    rowsEntryPending = true;
     renderAccounts(filterAccounts(searchInput.value));
     updateSpotlightUI();
     updateRouterStatusUI(true);
@@ -390,9 +410,7 @@ async function handleSwitch(account) {
 
     // Keep the modal open when a CLI session needs attention.
     if (cliFailed === 0 && cliSkipped === 0) {
-      setTimeout(() => {
-        switchModal.classList.remove('open');
-      }, 1800);
+      setTimeout(() => closeModal(switchModal), 1800);
     }
 
   } catch (err) {
@@ -466,7 +484,7 @@ function openSettingsModal() {
     })
     .catch(() => {});
 
-  settingsModal.classList.add('open');
+  openModal(settingsModal, settingsRouterUrl);
 }
 
 async function saveSettings() {
@@ -494,7 +512,7 @@ async function saveSettings() {
 
     if (data.success) {
       showToast(t('settingsSavedToast'), 'success');
-      settingsModal.classList.remove('open');
+      closeModal(settingsModal);
       appState.routerConfig = data.routerConfig;
       await triggerSync(password);
     } else {
@@ -511,6 +529,15 @@ async function saveSettings() {
 
 function updateSpotlightUI() {
   const acc = appState.activeAccount;
+
+  // Gentle content fade only when the active account changes, never on polling.
+  const spotKey = acc ? `${acc.accountId || ''}|${acc.email || ''}` : '';
+  if (spotKey !== lastSpotlightKey) {
+    lastSpotlightKey = spotKey;
+    spotlightMain.classList.remove('swap');
+    void spotlightMain.offsetWidth;
+    spotlightMain.classList.add('swap');
+  }
   const activeLimitsGrid = document.getElementById('activeLimitsGrid');
   const active5hPercent = document.getElementById('active5hPercent');
   const active5hFill = document.getElementById('active5hFill');
@@ -530,7 +557,7 @@ function updateSpotlightUI() {
     return;
   }
 
-  spotlightEmail.textContent = acc.email || 'ChatGPT Account';
+  renderEmailWithBreak(spotlightEmail, acc.email || 'ChatGPT Account');
   spotlightPlanBadge.textContent = (acc.plan && acc.plan !== 'unknown' ? acc.plan : t('planUnknown')).toUpperCase();
   spotlightAccountId.textContent = acc.accountId ? acc.accountId : 'N/A';
   spotlightAccountId.dataset.tooltip = acc.accountId || '';
@@ -585,13 +612,13 @@ function updateCodexProcessUI() {
     processText.textContent = t('runningBadge');
     toggleCodexProcessBtn.dataset.tooltip = t('stopChatGpt');
     toggleCodexProcessBtn.setAttribute('aria-label', t('stopChatGpt'));
-    processActionIcon.innerHTML = '<rect x="6" y="6" width="12" height="12"/>';
+    processActionIcon.innerHTML = '<rect x="6" y="6" width="12" height="12" rx="2"/>';
   } else {
     processDot.className = 'indicator-dot stopped';
     processText.textContent = t('stoppedBadge');
     toggleCodexProcessBtn.dataset.tooltip = t('startChatGpt');
     toggleCodexProcessBtn.setAttribute('aria-label', t('startChatGpt'));
-    processActionIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+    processActionIcon.innerHTML = '<polygon points="7 4 20 12 7 20 7 4"/>';
   }
 }
 
@@ -610,23 +637,51 @@ function updateRouterStatusUI(connected = true) {
 
 function renderAccounts(accounts) {
   window.hideAppTooltip?.();
-  const sortedAccounts = rankAccounts(accounts || []);
+  const list = accounts || [];
+  const sortedAccounts = rankAccounts(list);
   const bestAccount = sortedAccounts.find(account => getAccountRank(account).group === 0);
   accountsGrid.innerHTML = '';
   accountsCount.textContent = sortedAccounts.length;
 
-  if (!accounts || accounts.length === 0) {
-    emptyState.style.display = 'flex';
-    emptyTitle.textContent = appState.routerConfig.hasPassword ? t('emptyTitle') : t('passwordRequiredTitle');
-    emptyDesc.textContent = appState.routerConfig.hasPassword ? t('emptyDesc') : t('passwordRequiredDesc');
+  if (list.length === 0) {
+    accountsColHead.style.display = 'none';
+    accountsGrid.classList.remove('is-entering');
+    // No synced accounts at all shows the sync empty state; a search with no match shows the no-results message.
+    const noAccounts = appState.accounts.length === 0;
+    emptyState.style.display = noAccounts ? 'flex' : 'none';
+    noResultsState.style.display = noAccounts ? 'none' : 'flex';
+    if (noAccounts) {
+      emptyTitle.textContent = appState.routerConfig.hasPassword ? t('emptyTitle') : t('passwordRequiredTitle');
+      emptyDesc.textContent = appState.routerConfig.hasPassword ? t('emptyDesc') : t('passwordRequiredDesc');
+    }
     return;
   }
 
   emptyState.style.display = 'none';
+  noResultsState.style.display = 'none';
+  accountsColHead.style.display = '';
 
-  sortedAccounts.forEach((acc) => {
+  // Rows animate only on the first non-empty render and after a manual sync.
+  const entering = rowsEntryPending;
+  rowsEntryPending = false;
+  accountsGrid.classList.toggle('is-entering', entering);
+  if (entering) {
+    clearTimeout(entryTimer);
+    entryTimer = setTimeout(() => accountsGrid.classList.remove('is-entering'), 900);
+  }
+
+  // Bars start at the previously drawn width so a changed value animates.
+  const bar = (key, target) => {
+    const start = entering ? 0 : (quotaMemory.has(key) ? quotaMemory.get(key) : target);
+    quotaMemory.set(key, target);
+    return `data-bar-target="${target}" style="width: ${start}%"`;
+  };
+
+  sortedAccounts.forEach((acc, index) => {
     const row = document.createElement('div');
     row.className = `account-row ${acc.isActive ? 'is-active-row' : ''}`;
+    row.style.setProperty('--i', String(Math.min(index, 7)));
+    const rowKey = String(acc.id || acc.accountId || acc.email || index);
 
     const plan = String(acc.plan || '').toLowerCase();
     const knownPlans = ['free', 'plus', 'pro', 'team', 'business', 'enterprise', 'edu'];
@@ -634,14 +689,14 @@ function renderAccounts(accounts) {
     const planLabel = plan && plan !== 'unknown' ? plan : t('planUnknown');
     const idShort = acc.accountId ? String(acc.accountId).slice(0, 8) + '...' + String(acc.accountId).slice(-4) : '-';
 
-    // Limits info HTML (Shows REMAINING / KALAN and RESET CREDITS)
-    let limitsHtml = '';
+    let quotaHtml = '';
+    let creditsHtml = '';
     if (acc.usage) {
       if (acc.usage.error) {
         const expired = /\b401\b/.test(acc.usage.error);
         const errorLabel = t(expired ? 'sessionExpired' : 'usageUnavailable');
         const errorDetail = expired ? t('sessionExpiredHelp') : String(acc.usage.error);
-        limitsHtml = `<span class="row-error-badge" tabindex="0" data-tooltip="${escapeHtml(errorLabel)}" data-tooltip-detail="${escapeHtml(errorDetail)}">${errorLabel}</span>`;
+        quotaHtml = `<div class="quota-span"><span class="row-error-badge" tabindex="0" data-tooltip="${escapeHtml(errorLabel)}" data-tooltip-detail="${escapeHtml(errorDetail)}">${escapeHtml(errorLabel)}</span></div>`;
       } else if (acc.usage.primary) {
         const rem5 = getRemainingQuota(acc.usage.primary);
         const remW = getRemainingQuota(acc.usage.secondary);
@@ -653,73 +708,64 @@ function renderAccounts(accounts) {
         const c5Class = rem5 !== null && rem5 <= 10 ? 'danger' : (rem5 !== null && rem5 <= 25 ? 'warning' : '');
         const cwClass = remW !== null && remW <= 10 ? 'danger' : (remW !== null && remW <= 25 ? 'warning' : '');
 
-        const tip5 = rem5 === null ? t('quotaUnknown') : `${t('remaining')}: ${percent5}\n${t('resetsIn', t5)}`;
-        const tipW = remW === null ? t('quotaUnknown') : `${t('remaining')}: ${percentW}\n${t('resetsIn', tW)}`;
+        const reset5 = t('resetsIn', t5);
+        const resetW = acc.usage.secondary ? t('resetsIn', tW) : t('quotaUnknown');
+        const tip5 = rem5 === null ? t('quotaUnknown') : `${t('remaining')}: ${percent5}\n${reset5}`;
+        const tipW = remW === null ? t('quotaUnknown') : `${t('remaining')}: ${percentW}\n${resetW}`;
+        const resetCell5 = quotaResetHtml(t5, reset5);
+        const resetCellW = acc.usage.secondary ? quotaResetHtml(tW, resetW) : quotaResetHtml(null, resetW);
 
-        // If account has reset credits available, display badge
-        const hasCredits = typeof acc.usage.resetCredits === 'number' && acc.usage.resetCredits > 0;
-        const creditsHtml = hasCredits ? `
-          <div class="mini-credits-pill" tabindex="0" data-tooltip="${t('resetCredits')}: ${acc.usage.resetCredits}" data-tooltip-detail="${escapeHtml(t('resetCreditsHelp'))}">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-              <path d="M3 3v5h5"/>
-            </svg>
-            <span>${acc.usage.resetCredits}</span>
+        if (typeof acc.usage.resetCredits === 'number' && acc.usage.resetCredits > 0) {
+          creditsHtml = `<span class="credits-pill" tabindex="0" data-tooltip="${escapeHtml(`${t('resetCredits')}: ${acc.usage.resetCredits}`)}" data-tooltip-detail="${escapeHtml(t('resetCreditsHelp'))}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><span>${acc.usage.resetCredits}</span></span>`;
+        }
+
+        quotaHtml = `
+          <div class="quota-cell" tabindex="0" data-tooltip="${escapeHtml(t('fiveHourQuota'))}" data-tooltip-detail="${escapeHtml(tip5)}">
+            <span class="quota-tag">${escapeHtml(t('colFiveHour'))}</span>
+            <div class="quota-top"><span class="quota-pct">${escapeHtml(percent5)}</span></div>
+            <div class="mini-bar-track"><div class="mini-bar-fill ${c5Class}" ${bar(`${rowKey}:5h`, rem5 ?? 0)}></div></div>
+            ${resetCell5}
           </div>
-        ` : '';
-
-        limitsHtml = `
-          <div class="row-limits-wrap">
-            <div class="mini-limit-item" tabindex="0" data-tooltip="${t('fiveHourQuota')}" data-tooltip-detail="${escapeHtml(tip5)}">
-              <span class="mini-limit-tag">5h</span>
-              <div class="mini-bar-track">
-                <div class="mini-bar-fill ${c5Class}" style="width: ${rem5 ?? 0}%"></div>
-              </div>
-              <span class="mini-limit-val">${percent5}</span>
-            </div>
-            <div class="mini-limit-item" tabindex="0" data-tooltip="${t('weeklyQuota')}" data-tooltip-detail="${escapeHtml(tipW)}">
-              <span class="mini-limit-tag">W</span>
-              <div class="mini-bar-track">
-                <div class="mini-bar-fill ${cwClass}" style="width: ${remW ?? 0}%"></div>
-              </div>
-              <span class="mini-limit-val">${percentW}</span>
-            </div>
-            ${creditsHtml}
+          <div class="quota-cell" tabindex="0" data-tooltip="${escapeHtml(t('weeklyQuota'))}" data-tooltip-detail="${escapeHtml(tipW)}">
+            <span class="quota-tag">${escapeHtml(t('colWeekly'))}</span>
+            <div class="quota-top"><span class="quota-pct">${escapeHtml(percentW)}</span></div>
+            <div class="mini-bar-track"><div class="mini-bar-fill ${cwClass}" ${bar(`${rowKey}:w`, remW ?? 0)}></div></div>
+            ${resetCellW}
           </div>
         `;
       }
     }
-    if (!limitsHtml) {
-      limitsHtml = `<span class="row-quota-unknown" tabindex="0" data-tooltip="${t('quotaUnknown')}">${t('quotaUnknown')}</span>`;
+    if (!quotaHtml) {
+      quotaHtml = `<div class="quota-span"><span class="row-quota-unknown" tabindex="0" data-tooltip="${escapeHtml(t('quotaUnknown'))}">${escapeHtml(t('quotaUnknown'))}</span></div>`;
     }
 
     row.innerHTML = `
-      <div class="account-row-left">
+      <div class="cell-account">
         <span class="row-status-dot"></span>
         <div class="account-row-info">
           <div class="account-row-title-line">
             <span class="row-email" tabindex="0" data-tooltip="${escapeHtml(acc.email)}">${escapeHtml(acc.email)}</span>
             <span class="row-plan-badge ${planClass}">${escapeHtml(planLabel)}</span>
-            ${acc === bestAccount ? `<span class="best-choice-badge" tabindex="0" data-tooltip="${t('bestChoice')}" data-tooltip-detail="${escapeHtml(t('bestChoiceHelp'))}">${t('bestChoice')}</span>` : ''}
+            ${acc === bestAccount ? `<span class="best-choice-badge" tabindex="0" data-tooltip="${escapeHtml(t('bestChoice'))}" data-tooltip-detail="${escapeHtml(t('bestChoiceHelp'))}">${escapeHtml(t('bestChoice'))}</span>` : ''}
           </div>
           <div class="account-row-subline">
             <span>ID:</span>
             <span class="row-id" tabindex="0" data-tooltip="${escapeHtml(acc.accountId || '')}">${escapeHtml(idShort)}</span>
+            ${creditsHtml}
           </div>
         </div>
       </div>
 
-      <div class="account-row-right">
-        ${limitsHtml}
+      ${quotaHtml}
+
+      <div class="cell-action">
         ${acc.isActive ? `
-          <div class="active-state-tag">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            ${t('activeBadge')}
-          </div>
+          <span class="active-state-tag">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            ${escapeHtml(t('activeBadge'))}
+          </span>
         ` : `
-          <button class="btn btn-default btn-sm btn-switch-action">
-            ${t('switchBtn')}
-          </button>
+          <button class="btn btn-default btn-sm btn-switch-action">${escapeHtml(t('switchBtn'))}</button>
         `}
       </div>
     `;
@@ -733,6 +779,8 @@ function renderAccounts(accounts) {
 
     accountsGrid.appendChild(row);
   });
+
+  animateQuotaBars();
 }
 
 function filterAccounts(query) {
@@ -764,7 +812,7 @@ function openSwitchModal(account) {
     </div>
   `;
 
-  switchModal.classList.add('open');
+  openModal(switchModal, switchModal.querySelector('.modal-box'));
 }
 
 function appendSwitchStep(stepNum, status, label) {
@@ -796,13 +844,13 @@ function updateSwitchStep(stepNum, status, label) {
     indicator.innerHTML = '<div class="clean-spinner"></div>';
   } else if (status === 'done') {
     indicator.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" stroke-width="2.5">
+      <svg class="step-ok step-pop" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <polyline points="20 6 9 17 4 12"/>
       </svg>
     `;
   } else if (status === 'error') {
     indicator.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-rose)" stroke-width="2.5">
+      <svg class="step-err step-pop" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="18" y1="6" x2="6" y2="18"/>
         <line x1="6" y1="6" x2="18" y2="18"/>
       </svg>
@@ -813,6 +861,86 @@ function updateSwitchStep(stepNum, status, label) {
 // ============================================================================
 // UI Helpers
 // ============================================================================
+
+// Dialog helpers: focus moves in on open, is trapped while open, and returns to the opener on close.
+function getFocusable(container) {
+  return [...container.querySelectorAll(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )].filter(el => el.getClientRects().length > 0);
+}
+
+function openModal(modal, focusTarget) {
+  if (modal.classList.contains('open')) return;
+  const box = modal.querySelector('.modal-box');
+  dialogOpeners.set(modal, document.activeElement);
+  modal.classList.add('open');
+  const target = focusTarget || getFocusable(box)[0] || box;
+  target.focus({ preventScroll: true });
+}
+
+function closeModal(modal) {
+  if (!modal.classList.contains('open')) return;
+  const active = document.activeElement;
+  const focusWasInside = !active || active === document.body || modal.contains(active);
+  modal.classList.remove('open');
+  const opener = dialogOpeners.get(modal);
+  dialogOpeners.delete(modal);
+  if (!focusWasInside) return;
+  if (opener && opener.isConnected) {
+    opener.focus({ preventScroll: true });
+  } else if (modal === switchModal) {
+    // The opener row was re-rendered (account switched), so focus the search field instead.
+    searchInput.focus({ preventScroll: true });
+  } else {
+    openSettingsBtn.focus({ preventScroll: true });
+  }
+}
+
+function currentDialog() {
+  return [settingsModal, switchModal].find(modal => modal.classList.contains('open')) || null;
+}
+
+function trapDialogFocus(event) {
+  const modal = currentDialog();
+  if (!modal) return;
+  const box = modal.querySelector('.modal-box');
+  const items = getFocusable(box);
+  if (items.length === 0) {
+    event.preventDefault();
+    box.focus({ preventScroll: true });
+    return;
+  }
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  const inside = box.contains(active);
+  if (event.shiftKey && (!inside || active === first || active === box)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (!inside || active === last)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+// Quota bars: a bar that changes value animates from its previously drawn width.
+function animateQuotaBars() {
+  requestAnimationFrame(() => {
+    void accountsGrid.offsetWidth;
+    accountsGrid.querySelectorAll('[data-bar-target]').forEach((el) => {
+      el.style.width = `${el.dataset.barTarget}%`;
+    });
+  });
+}
+
+// Signature of the active set; used to detect switches made outside the app.
+function activeSignature(accounts) {
+  return accounts
+    .filter(account => account.isActive)
+    .map(account => String(account.id || account.accountId || account.email || ''))
+    .sort()
+    .join('|');
+}
 
 function log(msg) {
   if (logMessage) {
@@ -845,6 +973,26 @@ function showToast(message, type = 'info') {
     toast.classList.add('fading');
     setTimeout(() => toast.remove(), 250);
   }, 3200);
+}
+
+const RESET_CLOCK_SVG = '<svg class="reset-clock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
+
+// Table cell: clock and duration only (no ellipsis). The full sentence goes to a screen-reader-only span.
+// A null duration means unknown: a dash with no clock.
+function quotaResetHtml(duration, fullText) {
+  if (!duration) {
+    return `<span class="quota-reset">—<span class="sr-only">${escapeHtml(fullText)}</span></span>`;
+  }
+  return `<span class="quota-reset">${RESET_CLOCK_SVG}<span>${escapeHtml(duration)}</span><span class="sr-only">${escapeHtml(fullText)}</span></span>`;
+}
+
+// Builds the email from DOM nodes with a word break after "@" (no innerHTML).
+function renderEmailWithBreak(element, text) {
+  element.textContent = '';
+  String(text).split('@').forEach((part, index) => {
+    if (index > 0) element.append('@', document.createElement('wbr'));
+    element.append(part);
+  });
 }
 
 function escapeHtml(str) {

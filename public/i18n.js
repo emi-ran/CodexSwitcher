@@ -23,6 +23,12 @@ const I18N = {
     fiveHourQuota: '5 saatlik kota',
     weeklyQuota: 'Haftalık kota',
     searchPlaceholder: 'Hesap ara (e-posta veya ID)...',
+    searchLabel: 'Hesap ara',
+    colAccount: 'Hesap',
+    colFiveHour: '5 saat',
+    colWeekly: 'Haftalık',
+    colAction: 'İşlem',
+    noResultsTitle: 'Sonuç bulunamadı',
     activeBadge: 'Aktif',
     switchBtn: 'Geçiş Yap',
     sessionExpired: 'Oturum Süresi Doldu',
@@ -120,6 +126,12 @@ const I18N = {
     fiveHourQuota: '5-hour quota',
     weeklyQuota: 'Weekly quota',
     searchPlaceholder: 'Search accounts (email or ID)...',
+    searchLabel: 'Search accounts',
+    colAccount: 'Account',
+    colFiveHour: '5 hours',
+    colWeekly: 'Weekly',
+    colAction: 'Action',
+    noResultsTitle: 'No results',
     activeBadge: 'Active',
     switchBtn: 'Switch',
     sessionExpired: 'Session Expired',
@@ -254,6 +266,10 @@ function applyLanguage(lang, onLanguageChangeCallback) {
   document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     const key = el.getAttribute('data-i18n-placeholder');
     el.placeholder = t(key);
+  });
+
+  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+    el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria')));
   });
 
   document.querySelectorAll('[data-i18n-tooltip]').forEach((el) => {

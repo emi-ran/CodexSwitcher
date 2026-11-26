@@ -3,7 +3,6 @@
   tooltip.id = 'app-tooltip';
   tooltip.className = 'app-tooltip';
   tooltip.setAttribute('role', 'tooltip');
-  tooltip.hidden = true;
   const heading = document.createElement('div');
   heading.className = 'app-tooltip-heading';
   const detail = document.createElement('div');
@@ -15,10 +14,13 @@
   let showTimer;
   let hideTimer;
 
+  // Visibility is a class so the tooltip can fade in and out; CSS delays visibility on hide.
+  const isVisible = () => tooltip.classList.contains('visible');
+
   function hide() {
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
-    tooltip.hidden = true;
+    tooltip.classList.remove('visible');
     if (target) {
       const ids = (target.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== tooltip.id);
       if (ids.length) target.setAttribute('aria-describedby', ids.join(' '));
@@ -41,7 +43,7 @@
 
   function show(element, immediate = false) {
     clearTimeout(hideTimer);
-    if (element === target && (!immediate || !tooltip.hidden)) return;
+    if (element === target && (!immediate || !isVisible())) return;
     hide();
     target = element;
     const reveal = () => {
@@ -49,11 +51,11 @@
       heading.textContent = target.dataset.tooltip;
       detail.textContent = target.dataset.tooltipDetail || '';
       detail.hidden = !detail.textContent;
-      tooltip.hidden = false;
       const ids = new Set((target.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
       ids.add(tooltip.id);
       target.setAttribute('aria-describedby', [...ids].join(' '));
       position();
+      tooltip.classList.add('visible');
     };
     if (immediate) reveal();
     else showTimer = setTimeout(reveal, 220);
